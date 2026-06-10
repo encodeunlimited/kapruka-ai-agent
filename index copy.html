@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Shopping Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            purple: '#473075',   
+                            yellow: '#ffd604',   
+                            dark: '#160e24',     /* Deeper purple-black for UI panels */
+                            darker: '#0a0612'    /* Near pitch black for eye comfort */
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(71, 48, 117, 0.5); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 214, 4, 0.5); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .glass-panel {
+            background: rgba(19, 9, 36, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(139, 92, 246, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        /* Gemini-inspired fluid deep purple background base */
+        .animated-bg {
+            background: #07030e;
+        }
+
+        #gemini-canvas {
+            filter: blur(80px);
+            transform: scale(1.15);
+            opacity: 0.85;
+            pointer-events: none;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body class="animated-bg text-slate-200 h-screen flex flex-col overflow-hidden relative">
+
+    <div id="ambient-background" class="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+        <canvas id="gemini-canvas" class="absolute inset-0 w-full h-full"></canvas>
+    </div>
+
+    <header class="ui-element opacity-0 -translate-y-4 glass-panel border-b border-white/5 px-6 py-4 flex justify-between items-center z-10 relative">
+        <div class="flex items-center space-x-4">
+            <img src="enhanced-image.jpg" alt="Logo" class="h-8 object-contain opacity-90 drop-shadow-[0_0_8px_rgba(255,214,4,0.1)]">
+            <div class="hidden md:block h-6 w-px bg-white/10"></div>
+            <div class="hidden md:block">
+                <h1 class="text-lg font-bold tracking-tight text-slate-100">SmartAgent</h1>
+                <p class="text-xs text-brand-yellow/80 flex items-center gap-1.5 font-medium mt-0.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.5)]"></span> Live MCP Node
+                </p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <button onclick="toggleCartDrawer(true)" class="relative bg-brand-yellow/10 hover:bg-brand-yellow/20 border border-brand-yellow/30 hover:border-brand-yellow text-brand-yellow font-bold px-4 py-2 rounded-xl text-sm transition-all flex items-center gap-2 shadow-lg active:scale-95">
+                <i class="fa-solid fa-cart-shopping"></i>
+                <span class="hidden sm:inline">My Cart</span>
+                <span id="cart-badge" class="bg-brand-yellow text-black text-[10px] font-extrabold rounded-full px-1.5 py-0.5 min-w-[18px] text-center hidden">0</span>
+            </button>
+            <div class="text-xs bg-black/60 border border-white/5 text-slate-400 px-4 py-1.5 rounded-full font-mono shadow-inner tracking-wider hidden md:block">
+                Hackathon V2.0
+            </div>
+        </div>
+    </header>
+
+    <main id="chat-window" class="flex-1 overflow-y-auto px-4 py-6 md:px-12 space-y-6 custom-scrollbar max-w-5xl mx-auto w-full pb-32 z-10 relative">
+        <div class="welcome-box opacity-0 scale-95 glass-panel rounded-2xl p-6 flex flex-col md:flex-row items-start gap-5 border-l-2 border-l-brand-yellow/50 mt-4 bg-brand-darker/40">
+            <div class="text-3xl bg-black/50 border border-white/5 rounded-full h-14 w-14 flex items-center justify-center shrink-0 shadow-inner">🛒</div>
+            <div>
+                <h3 class="text-xl font-bold text-slate-100 tracking-tight">Ayu-bowan! Let's shop smarter.</h3>
+                <p class="text-sm text-slate-400 mt-2 leading-relaxed font-medium">
+                    I am directly connected to Sri Lanka's largest inventory. You can talk to me in <b>English</b>, <b>Sinhala</b>, or <b>Tanglish</b>! Try saying: <br>
+                    <span class="bg-black/60 px-3 py-1.5 rounded-lg border border-white/5 text-brand-yellow/90 mt-3 inline-block shadow-inner font-mono text-xs">
+                        "Machan, anniversary ekata hoda watch ekak pennanna under 15,000 LKR."
+                    </span>
+                </p>
+            </div>
+        </div>
+    </main>
+
+    <footer class="ui-element opacity-0 translate-y-4 absolute bottom-0 left-0 right-0 p-4 md:p-6 bg-gradient-to-t from-black via-brand-darker/95 to-transparent z-20">
+        <div class="max-w-5xl mx-auto w-full">
+            <form id="chat-form" class="flex gap-3 bg-brand-darker/80 backdrop-blur-xl rounded-2xl p-2 shadow-[0_0_30px_rgba(0,0,0,0.8)] focus-within:border-brand-yellow/30 border border-white/5 transition-all duration-300">
+                <input 
+                    type="text" 
+                    id="user-input" 
+                    autocomplete="off"
+                    placeholder="Ask for items, check delivery, or pay..." 
+                    class="flex-1 bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-200 placeholder-slate-600 px-4 text-sm md:text-base font-medium"
+                />
+                <button type="submit" class="bg-brand-yellow/90 hover:bg-brand-yellow text-black px-6 py-3 rounded-xl font-bold transition-transform active:scale-95 flex items-center justify-center shadow-[0_0_10px_rgba(255,214,4,0.2)]">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </form>
+        </div>
+    </footer>
+
+    <script>
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+        const chatWindow = document.getElementById('chat-window');
+        let messageHistory = [];
+        let isWaitingForResponse = false;
+
+        function initGeminiBackground() {
+            const canvas = document.getElementById('gemini-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+
+            let width, height;
+            function resize() {
+                // Downscale canvas resolution by 2x for high performance on high-DPI screens
+                width = canvas.width = window.innerWidth / 2;
+                height = canvas.height = window.innerHeight / 2;
+            }
+            resize();
+            window.addEventListener('resize', resize);
+
+            // Glowing blobs mimicking Google Gemini's energy glow style
+            // Predominant deep purples/indigos with minor warm golden/pink highlights
+            const blobs = [
+                {
+                    x: 0.15, y: 0.2,
+                    targetX: 0.2, targetY: 0.25,
+                    radius: 0.5,
+                    color: 'rgba(76, 29, 149, 0.6)', // Deep Violet
+                    angle: 0,
+                    speed: 0.0008
+                },
+                {
+                    x: 0.85, y: 0.8,
+                    targetX: 0.75, targetY: 0.7,
+                    radius: 0.45,
+                    color: 'rgba(109, 40, 217, 0.55)', // Violet
+                    angle: Math.PI,
+                    speed: 0.0006
+                },
+                {
+                    x: 0.7, y: 0.15,
+                    targetX: 0.8, targetY: 0.2,
+                    radius: 0.38,
+                    color: 'rgba(147, 51, 234, 0.45)', // Purple
+                    angle: Math.PI / 2,
+                    speed: 0.0009
+                },
+                {
+                    x: 0.25, y: 0.75,
+                    targetX: 0.25, targetY: 0.65,
+                    radius: 0.42,
+                    color: 'rgba(219, 39, 119, 0.3)', // Pinkish Fuchsia
+                    angle: Math.PI * 1.5,
+                    speed: 0.0007
+                },
+                {
+                    x: 0.5, y: 0.5,
+                    targetX: 0.5, targetY: 0.45,
+                    radius: 0.25,
+                    color: 'rgba(253, 224, 71, 0.12)', // Warm Gold accent
+                    angle: Math.PI * 0.75,
+                    speed: 0.001
+                }
+            ];
+
+            function animate() {
+                // Background dark-friendly base
+                ctx.fillStyle = '#06030c';
+                ctx.fillRect(0, 0, width, height);
+
+                const minDim = Math.min(width, height);
+
+                blobs.forEach((blob) => {
+                    // Update position using wave motion
+                    blob.angle += blob.speed;
+                    
+                    const offsetRadius = minDim * 0.22;
+                    const cx = blob.targetX * width;
+                    const cy = blob.targetY * height;
+
+                    const curX = cx + Math.sin(blob.angle) * offsetRadius;
+                    const curY = cy + Math.cos(blob.angle * 0.85) * offsetRadius;
+
+                    const radius = blob.radius * minDim * (1.0 + 0.1 * Math.sin(blob.angle * 1.6));
+
+                    // Drawing radial gradient blob
+                    const grad = ctx.createRadialGradient(curX, curY, 0, curX, curY, radius);
+                    grad.addColorStop(0, blob.color);
+                    grad.addColorStop(1, 'rgba(6, 3, 12, 0)');
+
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(curX, curY, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+
+                requestAnimationFrame(animate);
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initGeminiBackground();
+            
+            anime.timeline({ easing: 'easeOutExpo' })
+            .add({
+                targets: '.ui-element',
+                translateY: 0,
+                opacity: 1,
+                duration: 1000,
+                delay: anime.stagger(150)
+            })
+            .add({
+                targets: '.welcome-box',
+                scale: 1,
+                opacity: 1,
+                duration: 1000,
+                easing: 'easeOutElastic(1, .6)'
+            }, '-=600');
+        });
+
+        function formatMessage(text) {
+            // 1. Parse :::product ... ::: blocks
+            const productRegex = /:::product\s*([\s\S]*?)\s*:::/g;
+            const productBlocks = [];
+            let match;
+            
+            while ((match = productRegex.exec(text)) !== null) {
+                const blockContent = match[1];
+                const product = {};
+                
+                // Robust key-value parsing using lookahead regex to support both single-line and multi-line formatting
+                const keyPatterns = {
+                    id: /id:\s*([\s\S]*?)(?=\s*(title:|price:|availability:|image:|link:|$))/i,
+                    title: /title:\s*([\s\S]*?)(?=\s*(id:|price:|availability:|image:|link:|$))/i,
+                    price: /price:\s*([\s\S]*?)(?=\s*(id:|title:|availability:|image:|link:|$))/i,
+                    availability: /availability:\s*([\s\S]*?)(?=\s*(id:|title:|price:|image:|link:|$))/i,
+                    image: /image:\s*([\s\S]*?)(?=\s*(id:|title:|price:|availability:|link:|$))/i,
+                    link: /link:\s*([\s\S]*?)(?=\s*(id:|title:|price:|availability:|image:|$))/i
+                };
+
+                for (const key in keyPatterns) {
+                    const keyMatch = keyPatterns[key].exec(blockContent);
+                    if (keyMatch) {
+                        product[key] = keyMatch[1].trim();
+                    }
+                }
+                
+                if (product.title) {
+                    productBlocks.push(product);
+                }
+            }
+
+            // 2. Fallback parser: if the model didn't use :::product blocks, but outputted numbered lists or markdown lines with product links
+            if (productBlocks.length === 0) {
+                const lines = text.split('\n');
+                lines.forEach(line => {
+                    const urlMatch = line.match(/(https?:\/\/(?:www\.)?kapruka\.com\/(?:buyonline|partner|shops)[^\s]*)/i);
+                    if (urlMatch) {
+                        const link = urlMatch[1].replace(/[)*]+$/, '').trim(); // clean trailing markdown chars
+                        const titleMatch = line.match(/\*\*([^*]+)\*\*/);
+                        let title = titleMatch ? titleMatch[1].trim() : '';
+                        
+                        const priceMatch = line.match(/LKR\s*([\d,.]+)/i) || line.match(/Rs\.?\s*([\d,.]+)/i) || line.match(/price:\s*([\d,.]+)/i);
+                        const priceVal = priceMatch ? priceMatch[1].trim() : '';
+                        const price = priceVal ? 'LKR ' + priceVal : '';
+                        
+                        if (!title && link) {
+                            const segments = link.split('/');
+                            title = segments[segments.length - 3] || 'Product';
+                            title = title.replace(/-/g, ' ');
+                            title = title.charAt(0).toUpperCase() + title.slice(1);
+                        }
+
+                        if (title && link) {
+                            let productId = '';
+                            try {
+                                const urlObj = new URL(link);
+                                const productCode = urlObj.searchParams.get('productCode');
+                                if (productCode) {
+                                    productId = productCode;
+                                } else {
+                                    const dMatch = link.match(/\/d\/([A-Za-z0-9_-]+)/);
+                                    if (dMatch) {
+                                        productId = dMatch[1];
+                                    } else {
+                                        const pMatch = link.match(/\/p\/([A-Za-z0-9_-]+)/);
+                                        if (pMatch) {
+                                            productId = pMatch[1];
+                                        } else {
+                                            const segments = urlObj.pathname.split('/').filter(Boolean);
+                                            if (segments.length > 0) {
+                                                const last = segments[segments.length - 1];
+                                                if (/^[A-Za-z0-9_-]+$/.test(last)) {
+                                                    productId = last;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch(e){}
+
+                            // Clean up product ID
+                            if (productId) {
+                                productId = productId.replace(/[)*]+$/, '');
+                            } else {
+                                productId = 'item_' + Math.random().toString(36).substr(2, 9);
+                            }
+
+                            // Try to construct standard image URL
+                            let image = 'images.png';
+                            if (productId.match(/^[a-zA-Z]+[0-9]+$/)) {
+                                image = `https://static2.kapruka.com/product-image/width=330,quality=93,f=auto/shops/specialGifts/productImages/${productId.toLowerCase()}.jpg`;
+                            }
+
+                            productBlocks.push({
+                                id: productId,
+                                title: title,
+                                price: price || 'N/A',
+                                availability: 'In Stock',
+                                image: image,
+                                link: link
+                            });
+                        }
+                    }
+                });
+            }
+
+            // Remove the product blocks from the main text
+            let cleanText = text.replace(productRegex, '').trim();
+
+            // If we parsed using the fallback parser, remove those lines from cleanText
+            if (productBlocks.length > 0 && text.replace(productRegex, '').trim().length > 0) {
+                const cleanLines = cleanText.split('\n').filter(line => {
+                    return !line.toLowerCase().includes('kapruka.com/');
+                });
+                cleanText = cleanLines.join('\n').trim();
+            }
+            
+            // Format cleanText as standard markdown (images, links, newlines)
+            let formatted = cleanText
+                // Format markdown images: ![alt](url) -> <img>
+                .replace(/!\[([^\]]*)]\(([^)]*)\)/g, '<div class="my-3 rounded-xl overflow-hidden bg-black/30 border border-white/5 p-2 max-w-sm"><img src="$2" alt="$1" class="w-full h-auto object-contain rounded-lg max-h-48" onerror="this.src=\'images.png\'"></div>')
+                // Format markdown links: [text](url) -> <a> button
+                .replace(/\[([^\]]*)]\(([^)]*)\)/g, '<a href="$2" target="_blank" class="inline-flex items-center justify-center gap-2 bg-brand-yellow/90 hover:bg-brand-yellow text-black font-bold px-4 py-2.5 rounded-xl mt-3 transition-colors shadow-inner text-sm"><i class="fa-solid fa-cart-shopping"></i> $1</a>')
+                .replace(/\n/g, '<br>');
+
+            // If we extracted products, let's append them as a horizontal shelf!
+            if (productBlocks.length > 0) {
+                let shelfHtml = '<div class="flex gap-4 overflow-x-auto custom-scrollbar py-3 w-full mt-4">';
+                
+                productBlocks.forEach(product => {
+                    // Fix image URL if relative
+                    let imgSrc = product.image || '';
+                    if (imgSrc && !imgSrc.startsWith('http') && !imgSrc.startsWith('//')) {
+                        if (imgSrc.startsWith('/')) {
+                            imgSrc = 'https://www.kapruka.com' + imgSrc;
+                        } else {
+                            imgSrc = 'https://www.kapruka.com/' + imgSrc;
+                        }
+                    }
+
+                    // Extract Product ID
+                    let productId = product.id || '';
+                    if (!productId && product.link) {
+                        try {
+                            const urlObj = new URL(product.link, 'https://www.kapruka.com');
+                            const productCode = urlObj.searchParams.get('productCode');
+                            if (productCode) {
+                                productId = productCode;
+                            } else {
+                                const dMatch = product.link.match(/\/d\/([A-Za-z0-9_-]+)/);
+                                if (dMatch) {
+                                    productId = dMatch[1];
+                                } else {
+                                    const pMatch = product.link.match(/\/p\/([A-Za-z0-9_-]+)/);
+                                    if (pMatch) {
+                                        productId = pMatch[1];
+                                    } else {
+                                        const segments = urlObj.pathname.split('/').filter(Boolean);
+                                        if (segments.length > 0) {
+                                            const last = segments[segments.length - 1];
+                                            if (/^[A-Za-z0-9_-]+$/.test(last)) {
+                                                productId = last;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Error parsing product URL', e);
+                        }
+                    }
+                    if (!productId) {
+                        productId = 'item_' + Math.random().toString(36).substr(2, 9);
+                    }
+
+                    const isOut = product.availability && product.availability.toLowerCase().includes('out');
+                    const isLow = product.availability && product.availability.toLowerCase().includes('low');
+                    const badgeClass = isOut 
+                        ? 'bg-red-500/10 text-red-400 border-red-500/20' 
+                        : isLow
+                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+
+                    shelfHtml += `
+                        <div class="product-card flex-shrink-0 w-56 overflow-hidden rounded-2xl border border-white/5 bg-brand-darker/60 backdrop-blur-md transition-all duration-300 hover:border-brand-yellow/30 hover:shadow-[0_0_20px_rgba(255,214,4,0.05)] flex flex-col p-3">
+                            <!-- Image Container -->
+                            <div class="product-image-container w-full aspect-square rounded-xl overflow-hidden bg-black/40 flex items-center justify-center p-2 mb-3">
+                                <img src="${imgSrc || 'images.png'}" alt="${product.title || 'Product'}" class="w-full h-full object-contain" onerror="this.src='images.png'">
+                            </div>
+                            <!-- Info -->
+                            <div class="flex-1 flex flex-col justify-between">
+                                <div>
+                                    <h4 class="text-xs font-bold text-slate-100 line-clamp-2 min-h-[32px] leading-tight">${product.title}</h4>
+                                    <div class="flex items-center gap-2 mt-2 flex-wrap">
+                                        <span class="text-brand-yellow font-extrabold text-sm">${product.price || 'N/A'}</span>
+                                        <span class="text-[9px] px-2 py-0.5 rounded-full border ${badgeClass}">${product.availability || 'In Stock'}</span>
+                                    </div>
+                                </div>
+                                <!-- Action Buttons -->
+                                <div class="flex flex-col gap-2 mt-3">
+                                    <button ${isOut ? 'disabled' : `onclick="addToCart('${productId}', '${product.title.replace(/'/g, "\\'")}', '${product.price.replace(/'/g, "\\'")}', '${imgSrc}')"`} class="w-full inline-flex items-center justify-center gap-1.5 ${isOut ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5' : 'bg-brand-yellow/90 hover:bg-brand-yellow text-black shadow-[0_0_10px_rgba(255,214,4,0.15)] active:scale-95'} font-bold py-2 rounded-xl text-xs transition-all duration-200">
+                                        <i class="fa-solid ${isOut ? 'fa-ban' : 'fa-plus'}"></i> ${isOut ? 'Out of Stock' : 'Add to Cart'}
+                                    </button>
+                                    ${product.link ? `
+                                    <a href="${product.link}" target="_blank" class="w-full inline-flex items-center justify-center gap-1 bg-transparent hover:bg-white/5 border border-white/10 hover:border-white/20 text-slate-400 hover:text-slate-200 py-1.5 rounded-xl text-[10px] transition-colors">
+                                        View Details
+                                    </a>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                shelfHtml += '</div>';
+                
+                // Append the shelf html to our formatted text
+                formatted += shelfHtml;
+            }
+
+            return formatted;
+        }
+
+        function appendMessage(role, text) {
+            const container = document.createElement('div');
+            container.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'} mb-6`;
+            container.style.opacity = '0'; 
+
+            const wrapper = document.createElement('div');
+            
+            if (role === 'user') {
+                // TRUE DARK THEME FIX: No massive bright yellow blocks. Muted dark panel with yellow text.
+                wrapper.className = 'max-w-[85%] md:max-w-[75%] rounded-2xl rounded-br-sm p-4 bg-brand-yellow/10 border border-brand-yellow/20 text-brand-yellow font-medium text-sm md:text-base backdrop-blur-md shadow-lg';
+            } else {
+                // Bot bubble: Dark glass panel with light grey text for reading comfort
+                wrapper.className = 'max-w-[85%] md:max-w-[75%] rounded-2xl rounded-bl-sm p-4 shadow-xl glass-panel text-slate-300 font-medium leading-relaxed text-sm md:text-base';
+            }
+
+            let formattedText = formatMessage(text);
+
+            if (text.includes('Server Error') || text.includes('Gateway Offline')) {
+                wrapper.classList.remove('glass-panel', 'text-slate-300');
+                wrapper.className += ' bg-red-950/40 border border-red-900/50 text-red-300 backdrop-blur-md';
+            }
+
+            wrapper.innerHTML = formattedText;
+            container.appendChild(wrapper);
+            chatWindow.appendChild(container);
+
+            anime({
+                targets: container,
+                translateY: [20, 0],
+                scale: [0.98, 1],
+                opacity: [0, 1],
+                duration: 600,
+                easing: 'easeOutCubic'
+            });
+
+            scrollToBottom();
+        }
+
+        function createTypingIndicator() {
+            const container = document.createElement('div');
+            container.id = 'typing-indicator';
+            container.className = 'flex justify-start mb-6';
+            container.innerHTML = `
+                <div class="glass-panel rounded-2xl rounded-bl-sm p-4 flex gap-2 shadow-lg items-center h-[52px] bg-brand-darker/60">
+                    <div class="dot w-2 h-2 bg-brand-yellow/70 rounded-full"></div>
+                    <div class="dot w-2 h-2 bg-brand-yellow/70 rounded-full"></div>
+                    <div class="dot w-2 h-2 bg-brand-yellow/70 rounded-full"></div>
+                </div>
+            `;
+            chatWindow.appendChild(container);
+            scrollToBottom();
+
+            anime({
+                targets: '#typing-indicator .dot',
+                translateY: [-3, 3],
+                direction: 'alternate',
+                loop: true,
+                duration: 400,
+                easing: 'easeInOutSine',
+                delay: anime.stagger(150)
+            });
+
+            return container;
+        }
+
+        function scrollToBottom() {
+            chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'smooth' });
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (isWaitingForResponse) return;
+
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            isWaitingForResponse = true;
+            userInput.disabled = true;
+            
+            appendMessage('user', message);
+            userInput.value = '';
+            messageHistory.push({ role: 'user', content: message });
+
+            const typingBubble = createTypingIndicator();
+
+            try {
+                const response = await fetch('http://localhost:5000/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages: messageHistory })
+                });
+                
+                const data = await response.json();
+                
+                anime({
+                    targets: typingBubble,
+                    opacity: 0,
+                    scale: 0.95,
+                    duration: 300,
+                    easing: 'easeInQuad',
+                    complete: () => {
+                        chatWindow.removeChild(typingBubble);
+                        if (data.reply) {
+                            appendMessage('agent', data.reply);
+                            if (response.status === 200) {
+                                messageHistory.push({ role: 'assistant', content: data.reply });
+                            }
+                        } else if (data.error) {
+                            appendMessage('agent', `⚠️ <span class="font-bold">Server Error:</span> ${data.error}`);
+                        }
+                        isWaitingForResponse = false;
+                        userInput.disabled = false;
+                        userInput.focus();
+                    }
+                });
+
+            } catch (err) {
+                chatWindow.removeChild(typingBubble);
+                appendMessage('agent', '❌ <span class="font-bold text-red-400">Gateway Offline:</span> Cannot reach the backend. Check the terminal!');
+                isWaitingForResponse = false;
+                userInput.disabled = false;
+            }
+        });
+
+        // ==========================================
+        // CART DRAWER & CHECKOUT INTERACTION LOGIC
+        // ==========================================
+        let cart = [];
+
+        function toggleCartDrawer(open) {
+            const overlay = document.getElementById('cart-drawer-overlay');
+            const drawer = document.getElementById('cart-drawer');
+            
+            if (open) {
+                overlay.classList.remove('pointer-events-none');
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                drawer.classList.remove('translate-x-full');
+                renderCart();
+            } else {
+                overlay.classList.add('opacity-0');
+                overlay.classList.remove('opacity-100');
+                drawer.classList.add('translate-x-full');
+                setTimeout(() => {
+                    if (overlay.classList.contains('opacity-0')) {
+                        overlay.classList.add('pointer-events-none');
+                    }
+                }, 300);
+            }
+        }
+
+        function addToCart(productId, title, priceStr, image) {
+            let numericalPrice = 0;
+            if (priceStr) {
+                const cleaned = priceStr.replace(/[^\d.]/g, '');
+                numericalPrice = parseFloat(cleaned) || 0;
+            }
+
+            const existingIndex = cart.findIndex(item => item.product_id === productId);
+            if (existingIndex > -1) {
+                if (cart[existingIndex].quantity < 99) {
+                    cart[existingIndex].quantity += 1;
+                }
+            } else {
+                cart.push({
+                    product_id: productId,
+                    title: title,
+                    price_str: priceStr,
+                    price: numericalPrice,
+                    image: image,
+                    quantity: 1,
+                    icing_text: null
+                });
+            }
+
+            updateCartBadge();
+            
+            const badge = document.getElementById('cart-badge');
+            anime({
+                targets: badge.parentElement,
+                scale: [1, 1.15, 1],
+                duration: 400,
+                easing: 'easeOutBack'
+            });
+
+            toggleCartDrawer(true);
+        }
+
+        function updateQuantity(productId, delta) {
+            const index = cart.findIndex(item => item.product_id === productId);
+            if (index > -1) {
+                cart[index].quantity += delta;
+                if (cart[index].quantity <= 0) {
+                    cart.splice(index, 1);
+                } else if (cart[index].quantity > 99) {
+                    cart[index].quantity = 99;
+                }
+            }
+            updateCartBadge();
+            renderCart();
+        }
+
+        function removeFromCart(productId) {
+            cart = cart.filter(item => item.product_id !== productId);
+            updateCartBadge();
+            renderCart();
+        }
+
+        function updateCartBadge() {
+            const badge = document.getElementById('cart-badge');
+            const totalQty = cart.reduce((sum, item) => sum + item.quantity, 0);
+            if (totalQty > 0) {
+                badge.innerText = totalQty;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        function renderCart() {
+            const container = document.getElementById('cart-items-container');
+            const subtotalEl = document.getElementById('cart-subtotal');
+            const toggleCheckoutBtn = document.getElementById('toggle-checkout-btn');
+            
+            if (cart.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-slate-500">
+                        <i class="fa-solid fa-cart-flatbed text-4xl mb-3 block opacity-30"></i>
+                        <p class="text-sm font-medium text-slate-400">Your cart is empty machan!</p>
+                    </div>
+                `;
+                subtotalEl.innerText = 'LKR 0';
+                toggleCheckoutBtn.disabled = true;
+                toggleCheckoutBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                showCheckoutForm(false);
+                return;
+            }
+
+            toggleCheckoutBtn.disabled = false;
+            toggleCheckoutBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+
+            let html = '';
+            let subtotal = 0;
+
+            cart.forEach(item => {
+                const itemTotal = item.price * item.quantity;
+                subtotal += itemTotal;
+
+                html += `
+                    <div class="flex items-center gap-3 bg-black/35 border border-white/5 p-3 rounded-xl relative hover:border-white/10 transition-colors">
+                        <img src="${item.image || 'images.png'}" class="w-14 h-14 object-contain rounded-lg bg-black/40 p-1 flex-shrink-0" onerror="this.src='images.png'" />
+                        <div class="flex-1 min-w-0">
+                            <h4 class="text-xs font-bold text-slate-200 truncate pr-6">${item.title}</h4>
+                            <p class="text-xs text-brand-yellow font-extrabold mt-1">${item.price_str || ('LKR ' + item.price.toLocaleString())}</p>
+                            
+                            <div class="flex items-center gap-2 mt-2">
+                                <button onclick="updateQuantity('${item.product_id}', -1)" class="w-6 h-6 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white flex items-center justify-center transition-colors text-xs">
+                                    <i class="fa-solid fa-minus"></i>
+                                </button>
+                                <span class="text-xs font-bold text-slate-200 w-6 text-center">${item.quantity}</span>
+                                <button onclick="updateQuantity('${item.product_id}', 1)" class="w-6 h-6 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white flex items-center justify-center transition-colors text-xs">
+                                    <i class="fa-solid fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button onclick="removeFromCart('${item.product_id}')" class="absolute top-2 right-2 text-slate-500 hover:text-red-400 p-1 transition-colors">
+                            <i class="fa-solid fa-trash-can text-xs"></i>
+                        </button>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+            subtotalEl.innerText = 'LKR ' + subtotal.toLocaleString();
+        }
+
+        function showCheckoutForm(show) {
+            const formContainer = document.getElementById('checkout-form-container');
+            const itemsContainer = document.getElementById('cart-items-container');
+            const checkoutBtn = document.getElementById('toggle-checkout-btn');
+            const backBtn = document.getElementById('back-to-cart-btn');
+
+            if (show) {
+                formContainer.classList.remove('hidden');
+                itemsContainer.classList.add('hidden');
+                checkoutBtn.classList.add('hidden');
+                backBtn.classList.remove('hidden');
+                backBtn.classList.add('flex');
+                
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const dateStr = tomorrow.toISOString().split('T')[0];
+                const dateInput = document.getElementById('delivery-date');
+                dateInput.value = dateStr;
+                dateInput.min = new Date().toISOString().split('T')[0];
+            } else {
+                formContainer.classList.add('hidden');
+                itemsContainer.classList.remove('hidden');
+                checkoutBtn.classList.remove('hidden');
+                backBtn.classList.add('hidden');
+                backBtn.classList.remove('flex');
+            }
+        }
+
+        let cityTimeout = null;
+        async function searchCities(query) {
+            const dropdown = document.getElementById('city-results-dropdown');
+            const cityInput = document.getElementById('delivery-city');
+            
+            if (!query || query.trim().length < 2) {
+                dropdown.classList.add('hidden');
+                cityInput.value = '';
+                return;
+            }
+
+            clearTimeout(cityTimeout);
+            cityTimeout = setTimeout(async () => {
+                try {
+                    const res = await fetch(`http://localhost:5000/api/cities?q=${encodeURIComponent(query)}`);
+                    const data = await res.json();
+                    
+                    if (data.cities && data.cities.length > 0) {
+                        dropdown.innerHTML = data.cities.map(city => `
+                            <div onclick="selectCity('${city.replace(/'/g, "\\'")}')" class="px-4 py-2 hover:bg-brand-yellow/10 hover:text-brand-yellow cursor-pointer transition-colors text-xs font-semibold border-b border-white/5 last:border-0">${city}</div>
+                        `).join('');
+                        dropdown.classList.remove('hidden');
+                    } else {
+                        dropdown.innerHTML = `<div class="px-4 py-2.5 text-slate-500 text-xs">No matching deliverable cities found</div>`;
+                        dropdown.classList.remove('hidden');
+                        cityInput.value = '';
+                    }
+                } catch (err) {
+                    console.error('Error fetching cities:', err);
+                }
+            }, 300);
+        }
+
+        function selectCity(city) {
+            document.getElementById('delivery-city-search').value = city;
+            document.getElementById('delivery-city').value = city;
+            document.getElementById('city-results-dropdown').classList.add('hidden');
+        }
+
+        document.addEventListener('click', (e) => {
+            const dropdown = document.getElementById('city-results-dropdown');
+            if (dropdown && !e.target.closest('#delivery-city-search') && !e.target.closest('#city-results-dropdown')) {
+                dropdown.classList.add('hidden');
+            }
+
+            // Close cart drawer if clicking directly on the overlay backdrop
+            const overlay = document.getElementById('cart-drawer-overlay');
+            if (e.target === overlay) {
+                toggleCartDrawer(false);
+            }
+        });
+
+        async function handleCheckout(event) {
+            event.preventDefault();
+            
+            const errorEl = document.getElementById('checkout-error');
+            errorEl.classList.add('hidden');
+            
+            const phone = document.getElementById('recipient-phone').value.trim();
+            const phoneRegex = /^(?:\+94|0)?7[0-9]{8}$/;
+            if (!phoneRegex.test(phone.replace(/\s+/g, ''))) {
+                errorEl.innerText = "Machan, please enter a valid Sri Lankan phone number (e.g. 0771234567 or +94771234567).";
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            const city = document.getElementById('delivery-city').value.trim();
+            if (!city) {
+                errorEl.innerText = "Please select a valid city from the search dropdown, machan!";
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            const recipientName = document.getElementById('recipient-name').value.trim();
+            const deliveryAddress = document.getElementById('delivery-address').value.trim();
+            const deliveryDate = document.getElementById('delivery-date').value;
+            const deliveryLocationType = document.getElementById('delivery-location-type').value;
+            const deliveryInstructions = document.getElementById('delivery-instructions').value.trim();
+            const senderName = document.getElementById('sender-name').value.trim();
+            const senderAnonymous = document.getElementById('sender-anonymous').checked;
+            const giftMessage = document.getElementById('gift-message').value.trim();
+
+            const loadingOverlay = document.getElementById('cart-loading-overlay');
+            const loadingText = document.getElementById('cart-loading-text');
+            loadingOverlay.classList.remove('pointer-events-none');
+            loadingOverlay.classList.add('opacity-100');
+            loadingText.innerText = "Connecting to Kapruka gateway...";
+
+            try {
+                const response = await fetch('http://localhost:5000/api/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cart: cart.map(item => ({
+                            product_id: item.product_id,
+                            quantity: item.quantity,
+                            icing_text: item.icing_text
+                        })),
+                        recipient: {
+                            name: recipientName,
+                            phone: phone
+                        },
+                        delivery: {
+                            address: deliveryAddress,
+                            city: city,
+                            location_type: deliveryLocationType,
+                            date: deliveryDate,
+                            instructions: deliveryInstructions
+                        },
+                        sender: {
+                            name: senderName,
+                            anonymous: senderAnonymous
+                        },
+                        gift_message: giftMessage
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.status === 200 && data.success) {
+                    loadingText.innerText = "Order created! Redirecting to checkout...";
+                    
+                    const redirectUrl = data.redirect_url || (data.data && (data.data.checkoutUrl || data.data.redirect_url || data.data.url));
+                    
+                    if (redirectUrl) {
+                        setTimeout(() => {
+                            window.location.href = redirectUrl;
+                        }, 1000);
+                    } else {
+                        const urlMatch = data.raw.match(/https?:\/\/[^\s"]+/);
+                        if (urlMatch) {
+                            setTimeout(() => {
+                                window.location.href = urlMatch[0];
+                            }, 1000);
+                        } else {
+                            loadingOverlay.classList.remove('opacity-100');
+                            loadingOverlay.classList.add('pointer-events-none');
+                            errorEl.innerText = "Order created but couldn't parse the checkout redirect link. Check response:\n" + data.raw;
+                            errorEl.classList.remove('hidden');
+                        }
+                    }
+                } else {
+                    loadingOverlay.classList.remove('opacity-100');
+                    loadingOverlay.classList.add('pointer-events-none');
+                    errorEl.innerText = `⚠️ Error: ${data.error || 'Failed to place order'}`;
+                    errorEl.classList.remove('hidden');
+                }
+            } catch (err) {
+                loadingOverlay.classList.remove('opacity-100');
+                loadingOverlay.classList.add('pointer-events-none');
+                errorEl.innerText = "❌ Connection failed. Could not reach backend server.";
+                errorEl.classList.remove('hidden');
+            }
+        }
+    </script>
+
+    <!-- Sliding Cart Drawer Panel -->
+    <div id="cart-drawer-overlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 transition-opacity duration-300 opacity-0 pointer-events-none flex justify-end">
+        <div id="cart-drawer" class="w-full max-w-md h-full glass-panel border-l border-white/10 bg-brand-dark/95 flex flex-col translate-x-full transition-transform duration-300 shadow-2xl relative">
+            
+            <!-- Drawer Header -->
+            <div class="p-5 border-b border-white/5 flex justify-between items-center bg-black/20">
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">🛒</span>
+                    <h3 class="text-lg font-bold text-slate-100">Shopping Cart</h3>
+                </div>
+                <button onclick="toggleCartDrawer(false)" class="text-slate-400 hover:text-white p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Drawer Content (Scrollable) -->
+            <div class="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar" id="cart-drawer-content">
+                <!-- Cart Items List -->
+                <div id="cart-items-container" class="space-y-3">
+                    <div class="text-center py-12 text-slate-500">
+                        <i class="fa-solid fa-cart-flatbed text-4xl mb-3 block opacity-30"></i>
+                        <p class="text-sm font-medium">Your cart is empty machan!</p>
+                    </div>
+                </div>
+
+                <!-- Checkout Form (Initially Hidden) -->
+                <div id="checkout-form-container" class="hidden border-t border-white/5 pt-6 mt-6 space-y-4">
+                    <h4 class="text-sm font-bold text-brand-yellow uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-truck-fast"></i> Delivery & Sender Details
+                    </h4>
+                    
+                    <form id="checkout-form" onsubmit="handleCheckout(event)" class="space-y-4">
+                        <!-- Recipient Section -->
+                        <div class="space-y-3 bg-black/25 p-3.5 rounded-xl border border-white/5">
+                            <h5 class="text-xs font-bold text-slate-300 flex items-center gap-1.5"><i class="fa-solid fa-user-tag text-brand-yellow/80"></i> Recipient (Who receives it)</h5>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 font-semibold mb-1">Full Name *</label>
+                                <input type="text" id="recipient-name" required placeholder="e.g. Nimal Perera" class="w-full bg-black/45 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-yellow/50 transition-colors" />
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 font-semibold mb-1">Phone Number *</label>
+                                <input type="tel" id="recipient-phone" required placeholder="e.g. +94771234567 or 0771234567" class="w-full bg-black/45 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-yellow/50 transition-colors" />
+                            </div>
+                        </div>
+
+                        <!-- Delivery Section -->
+                        <div class="space-y-3 bg-black/25 p-3.5 rounded-xl border border-white/5">
+                            <h5 class="text-xs font-bold text-slate-300 flex items-center gap-1.5"><i class="fa-solid fa-map-location-dot text-brand-yellow/80"></i> Delivery Details</h5>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 font-semibold mb-1">Street Address *</label>
+                                <input type="text" id="delivery-address" required placeholder="e.g. 145/2 Galle Road" class="w-full bg-black/45 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-yellow/50 transition-colors" />
+                            </div>
+                            
+                            <!-- City with Dropdown & Search -->
+                            <div class="relative">
+                                <label class="block text-[11px] text-slate-400 font-semibold mb-1">Delivery City (Search & Select) *</label>
+                                <input type="text" id="delivery-city-search" oninput="searchCities(this.value)" placeholder="Start typing (e.g. Colombo 03)..." class="w-full bg-black/45 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-yellow/50 transition-colors" />
+                                <div id="city-results-dropdown" class="absolute w-full mt-1 bg-brand-dark/95 border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50 hidden max-h-40 overflow-y-auto custom-scrollbar"></div>
+                                <input type="hidden" id="delivery-city" required />
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-[11px] text-slate-400 font-semibold mb-1">Location Type</label>
+                                    <select id="delivery-location-type" class="w-full bg-black/45 border border-white/10 rounded-xl px-2 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-yellow/50 transition-colors">
+                                        <option value="house">House</option>
+                                        <option value="apartment">Apartment</option>
+                                        <option value="office">Office</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] text-slate-400 font-semibold mb-1">Delivery Date *</label>
+                                    <input type="date" id="delivery-date" required class="w-full bg-black/45 border border-white/10 rounded-xl px-2 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-yellow/50 transition-colors" />
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 font-semibold mb-1">Instructions (Optional)</label>
+                                <input type="text" id="delivery-instructions" placeholder="e.g. Leave at front gate" class="w-full bg-black/45 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-yellow/50 transition-colors" />
+                            </div>
+                        </div>
+
+                        <!-- Sender Section -->
+                        <div class="space-y-3 bg-black/25 p-3.5 rounded-xl border border-white/5">
+                            <h5 class="text-xs font-bold text-slate-300 flex items-center gap-1.5"><i class="fa-solid fa-user text-brand-yellow/80"></i> Sender (Who pays)</h5>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 font-semibold mb-1">Your Name *</label>
+                                <input type="text" id="sender-name" required placeholder="Your full name" class="w-full bg-black/45 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-yellow/50 transition-colors" />
+                            </div>
+                            <div class="flex items-center gap-2 mt-2">
+                                <input type="checkbox" id="sender-anonymous" class="w-4 h-4 rounded border-white/10 bg-black/45 text-brand-yellow focus:ring-0" />
+                                <label for="sender-anonymous" class="text-xs text-slate-300 select-none">Send Anonymously</label>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 font-semibold mb-1">Gift Message (Optional)</label>
+                                <textarea id="gift-message" maxlength="300" placeholder="e.g. Happy Birthday!" class="w-full bg-black/45 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-yellow/50 transition-colors h-16 resize-none custom-scrollbar"></textarea>
+                            </div>
+                        </div>
+
+                        <!-- Form Error Message -->
+                        <div id="checkout-error" class="text-xs text-red-400 font-bold hidden bg-red-950/20 border border-red-900/30 p-3 rounded-xl"></div>
+
+                        <!-- Submit Button -->
+                        <button type="submit" id="submit-checkout-btn" class="w-full bg-brand-yellow/90 hover:bg-brand-yellow text-black font-extrabold py-3.5 rounded-xl text-sm transition-all duration-200 shadow-[0_0_15px_rgba(255,214,4,0.2)] flex items-center justify-center gap-2 active:scale-95">
+                            <i class="fa-solid fa-credit-card"></i> Proceed to Kapruka Pay
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Drawer Footer (Subtotal / Cart Actions) -->
+            <div id="cart-drawer-footer" class="p-5 border-t border-white/5 bg-black/30 space-y-4">
+                <div class="flex justify-between items-center">
+                    <span class="text-sm text-slate-400 font-semibold">Subtotal</span>
+                    <span id="cart-subtotal" class="text-xl font-extrabold text-brand-yellow">LKR 0</span>
+                </div>
+                
+                <div class="flex gap-3">
+                    <button id="toggle-checkout-btn" onclick="showCheckoutForm(true)" class="flex-1 bg-brand-yellow/90 hover:bg-brand-yellow text-black font-extrabold py-3 rounded-xl text-sm transition-all shadow-[0_0_10px_rgba(255,214,4,0.15)] flex items-center justify-center gap-1.5 active:scale-95">
+                        Checkout <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                    <button id="back-to-cart-btn" onclick="showCheckoutForm(false)" class="flex-1 bg-transparent hover:bg-white/5 border border-white/10 text-slate-300 font-bold py-3 rounded-xl text-sm transition-colors hidden items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-arrow-left"></i> Back to Cart
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Loading overlay -->
+            <div id="cart-loading-overlay" class="absolute inset-0 bg-brand-darker/90 backdrop-blur-md flex flex-col items-center justify-center z-55 opacity-0 pointer-events-none transition-opacity duration-300">
+                <div class="w-12 h-12 border-4 border-brand-yellow border-t-transparent rounded-full animate-spin"></div>
+                <p class="text-sm font-bold text-slate-200 mt-4 tracking-wide" id="cart-loading-text">Securing order details...</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
