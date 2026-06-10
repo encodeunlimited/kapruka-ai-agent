@@ -74,6 +74,28 @@
             </div>
         </div>
         <div class="flex items-center space-x-3">
+            <!-- LLM Selector -->
+            <div class="relative">
+                <select id="llm-select" class="bg-black/60 border border-white/10 hover:border-white/20 text-slate-300 hover:text-slate-100 px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none focus:border-brand-yellow/50 transition-colors cursor-pointer pr-8 appearance-none shadow-inner">
+                    <option value="auto-pick" selected>Auto Pick (Groq / Nvidia)</option>
+                    <option value="llama-3.3-70b-versatile">Groq Llama 3.3 70B</option>
+                    <option value="qwen/qwen3-32b">Groq Qwen 3 32B</option>
+                    <option value="llama-3.1-8b-instant">Groq Llama 3.1 8B</option>
+                    <option value="meta/llama-3.3-70b-instruct">Nvidia Llama 3.3 70B</option>
+                    <option value="nvidia/llama-3.1-nemotron-70b-instruct">Nvidia Llama 3.1 Nemotron</option>
+                    <option value="mistralai/mixtral-8x22b-v0.1">Nvidia Mixtral 8x22B</option>
+                </select>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-400">
+                    <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                </div>
+            </div>
+
+            <!-- Clear Chat Button -->
+            <button onclick="clearChatHistory()" class="bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-bold px-3 py-2 rounded-xl text-xs transition-all flex items-center gap-1.5 active:scale-95" title="Clear Chat History">
+                <i class="fa-solid fa-trash-can"></i>
+                <span class="hidden sm:inline">Clear Chat</span>
+            </button>
+
             <button onclick="toggleCartDrawer(true)" class="relative bg-brand-yellow/10 hover:bg-brand-yellow/20 border border-brand-yellow/30 hover:border-brand-yellow text-brand-yellow font-bold px-4 py-2 rounded-xl text-sm transition-all flex items-center gap-2 shadow-lg active:scale-95">
                 <i class="fa-solid fa-cart-shopping"></i>
                 <span class="hidden sm:inline">My Cart</span>
@@ -122,6 +144,14 @@
         const userInput = document.getElementById('user-input');
         const chatWindow = document.getElementById('chat-window');
         let messageHistory = [];
+        try {
+            const storedHistory = localStorage.getItem('chat_history');
+            if (storedHistory) {
+                messageHistory = JSON.parse(storedHistory);
+            }
+        } catch (e) {
+            console.error('Failed to load chat history from localStorage', e);
+        }
         let isWaitingForResponse = false;
 
         function initGeminiBackground() {
@@ -220,8 +250,85 @@
             requestAnimationFrame(animate);
         }
 
+        function loadAndRenderHistory() {
+            try {
+                if (messageHistory && messageHistory.length > 0) {
+                    // Hide welcome box to avoid clutter if there is history
+                    const welcomeBox = document.querySelector('.welcome-box');
+                    if (welcomeBox) {
+                        welcomeBox.classList.add('hidden');
+                    }
+                    
+                    messageHistory.forEach(msg => {
+                        const role = msg.role === 'assistant' ? 'agent' : 'user';
+                        appendMessage(role, msg.content, false);
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to load/render history', e);
+            }
+        }
+
+        let onConfirmApprove = null;
+
+        function showConfirmModal(callback) {
+            const modal = document.getElementById('confirm-modal');
+            const panel = modal.querySelector('.glass-panel');
+            
+            modal.classList.remove('pointer-events-none', 'opacity-0');
+            modal.classList.add('opacity-100');
+            panel.classList.remove('scale-90');
+            panel.classList.add('scale-100');
+            
+            onConfirmApprove = callback;
+        }
+
+        function hideConfirmModal() {
+            const modal = document.getElementById('confirm-modal');
+            const panel = modal.querySelector('.glass-panel');
+            
+            modal.classList.add('opacity-0');
+            modal.classList.remove('opacity-100');
+            panel.classList.remove('scale-100');
+            panel.classList.add('scale-90');
+            
+            setTimeout(() => {
+                if (modal.classList.contains('opacity-0')) {
+                    modal.classList.add('pointer-events-none');
+                }
+            }, 300);
+        }
+
+        function clearChatHistory() {
+            showConfirmModal(() => {
+                messageHistory = [];
+                localStorage.removeItem('chat_history');
+                
+                // Remove all chat messages from DOM except welcome-box
+                const welcomeBox = document.querySelector('.welcome-box');
+                chatWindow.innerHTML = '';
+                if (welcomeBox) {
+                    welcomeBox.classList.remove('hidden');
+                    chatWindow.appendChild(welcomeBox);
+                } else {
+                    location.reload();
+                }
+            });
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             initGeminiBackground();
+            loadAndRenderHistory();
+            updateCartBadge();
+            
+            // Bind custom confirmation modal buttons
+            const cancelBtn = document.getElementById('confirm-modal-cancel');
+            const approveBtn = document.getElementById('confirm-modal-approve');
+            if (cancelBtn) cancelBtn.addEventListener('click', hideConfirmModal);
+            if (approveBtn) approveBtn.addEventListener('click', () => {
+                if (onConfirmApprove) onConfirmApprove();
+                hideConfirmModal();
+            });
             
             anime.timeline({ easing: 'easeOutExpo' })
             .add({
@@ -281,7 +388,10 @@
                 for (const key in keyPatterns) {
                     const keyMatch = keyPatterns[key].exec(blockContent);
                     if (keyMatch) {
-                        product[key] = keyMatch[1].trim();
+                        let val = keyMatch[1].trim();
+                        // Strip leading/trailing quotes (single or double) that the AI model might wrap around values
+                        val = val.replace(/^["']|["']$/g, '').trim();
+                        product[key] = val;
                     }
                 }
                 
@@ -299,10 +409,12 @@
                         const link = urlMatch[1].replace(/[)*]+$/, '').trim(); // clean trailing markdown chars
                         const titleMatch = line.match(/\*\*([^*]+)\*\*/);
                         let title = titleMatch ? titleMatch[1].trim() : '';
+                        title = title.replace(/^["']|["']$/g, '').trim();
                         
                         const priceMatch = line.match(/LKR\s*([\d,.]+)/i) || line.match(/Rs\.?\s*([\d,.]+)/i) || line.match(/price:\s*([\d,.]+)/i);
                         const priceVal = priceMatch ? priceMatch[1].trim() : '';
-                        const price = priceVal ? 'LKR ' + priceVal : '';
+                        let price = priceVal ? 'LKR ' + priceVal : '';
+                        price = price.replace(/^["']|["']$/g, '').trim();
                         
                         if (!title && link) {
                             const segments = link.split('/');
@@ -341,7 +453,7 @@
 
                             // Clean up product ID
                             if (productId) {
-                                productId = productId.replace(/[)*]+$/, '');
+                                productId = productId.replace(/[)*]+$/, '').replace(/^["']|["']$/g, '').trim();
                             } else {
                                 productId = 'item_' + Math.random().toString(36).substr(2, 9);
                             }
@@ -391,6 +503,20 @@
                 productBlocks.forEach(product => {
                     // Fix image URL if relative
                     let imgSrc = product.image || '';
+                    imgSrc = imgSrc.replace(/^["']|["']$/g, '').trim();
+                    
+                    // Strip the static2 Cloudflare-protected resize proxy prefix to load directly and bypass challenges
+                    const proxyPrefix = 'https://static2.kapruka.com/product-image/width=330,quality=93,f=auto/';
+                    if (imgSrc.startsWith(proxyPrefix)) {
+                        imgSrc = imgSrc.substring(proxyPrefix.length);
+                    }
+                    
+                    // Extract absolute URL if it is nested inside the resize proxy path (common for partnercentral URLs)
+                    const nestedUrlIndex = imgSrc.indexOf('http', 1);
+                    if (nestedUrlIndex > -1) {
+                        imgSrc = imgSrc.substring(nestedUrlIndex);
+                    }
+                    
                     if (imgSrc && !imgSrc.startsWith('http') && !imgSrc.startsWith('//')) {
                         if (imgSrc.startsWith('/')) {
                             imgSrc = 'https://www.kapruka.com' + imgSrc;
@@ -401,18 +527,19 @@
 
                     // Extract Product ID
                     let productId = product.id || '';
+                    productId = productId.replace(/^["']|["']$/g, '').trim();
                     if (!productId && product.link) {
                         try {
-                            const urlObj = new URL(product.link, 'https://www.kapruka.com');
+                            const urlObj = new URL(product.link.replace(/^["']|["']$/g, '').trim(), 'https://www.kapruka.com');
                             const productCode = urlObj.searchParams.get('productCode');
                             if (productCode) {
                                 productId = productCode;
                             } else {
-                                const dMatch = product.link.match(/\/d\/([A-Za-z0-9_-]+)/);
+                                const dMatch = urlObj.pathname.match(/\/d\/([A-Za-z0-9_-]+)/);
                                 if (dMatch) {
                                     productId = dMatch[1];
                                 } else {
-                                    const pMatch = product.link.match(/\/p\/([A-Za-z0-9_-]+)/);
+                                    const pMatch = urlObj.pathname.match(/\/p\/([A-Za-z0-9_-]+)/);
                                     if (pMatch) {
                                         productId = pMatch[1];
                                     } else {
@@ -432,6 +559,17 @@
                     }
                     if (!productId) {
                         productId = 'item_' + Math.random().toString(36).substr(2, 9);
+                    }
+
+                    // Resolve absolute URL for the Details link
+                    let linkUrl = product.link || '';
+                    linkUrl = linkUrl.replace(/^["']|["']$/g, '').trim();
+                    if (linkUrl && !linkUrl.startsWith('http') && !linkUrl.startsWith('//')) {
+                        if (linkUrl.startsWith('/')) {
+                            linkUrl = 'https://www.kapruka.com' + linkUrl;
+                        } else {
+                            linkUrl = 'https://www.kapruka.com/' + linkUrl;
+                        }
                     }
 
                     const isOut = product.availability && product.availability.toLowerCase().includes('out');
@@ -472,8 +610,8 @@
                                     `} class="w-full inline-flex items-center justify-center gap-1.5 ${isOut ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5' : 'bg-brand-yellow/90 hover:bg-brand-yellow text-black shadow-[0_0_10px_rgba(255,214,4,0.15)] active:scale-95'} font-bold py-2 rounded-xl text-xs transition-all duration-200">
                                         <i class="fa-solid ${isOut ? 'fa-ban' : 'fa-plus'}"></i> ${isOut ? 'Out of Stock' : 'Add to Cart'}
                                     </button>
-                                    ${product.link ? `
-                                    <a href="${product.link}" target="_blank" class="w-full inline-flex items-center justify-center gap-1 bg-transparent hover:bg-white/5 border border-white/10 hover:border-white/20 text-slate-400 hover:text-slate-200 py-1.5 rounded-xl text-[10px] transition-colors">
+                                    ${linkUrl ? `
+                                    <a href="${linkUrl}" target="_blank" class="w-full inline-flex items-center justify-center gap-1 bg-transparent hover:bg-white/5 border border-white/10 hover:border-white/20 text-slate-400 hover:text-slate-200 py-1.5 rounded-xl text-[10px] transition-colors">
                                         View Details
                                     </a>
                                     ` : ''}
@@ -491,10 +629,12 @@
             return formatted;
         }
 
-        function appendMessage(role, text) {
+        function appendMessage(role, text, shouldAnimate = true) {
             const container = document.createElement('div');
             container.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'} mb-6`;
-            container.style.opacity = '0'; 
+            if (shouldAnimate) {
+                container.style.opacity = '0'; 
+            }
 
             const wrapper = document.createElement('div');
             
@@ -517,14 +657,16 @@
             container.appendChild(wrapper);
             chatWindow.appendChild(container);
 
-            anime({
-                targets: container,
-                translateY: [20, 0],
-                scale: [0.98, 1],
-                opacity: [0, 1],
-                duration: 600,
-                easing: 'easeOutCubic'
-            });
+            if (shouldAnimate) {
+                anime({
+                    targets: container,
+                    translateY: [20, 0],
+                    scale: [0.98, 1],
+                    opacity: [0, 1],
+                    duration: 600,
+                    easing: 'easeOutCubic'
+                });
+            }
 
             scrollToBottom();
         }
@@ -573,14 +715,21 @@
             appendMessage('user', message);
             userInput.value = '';
             messageHistory.push({ role: 'user', content: message });
+            localStorage.setItem('chat_history', JSON.stringify(messageHistory));
 
             const typingBubble = createTypingIndicator();
 
             try {
+                const llmSelect = document.getElementById('llm-select');
+                const selectedModel = llmSelect ? llmSelect.value : 'meta/llama-3.3-70b-instruct';
+
                 const response = await fetch('http://localhost:5000/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ messages: messageHistory })
+                    body: JSON.stringify({ 
+                        messages: messageHistory,
+                        model: selectedModel
+                    })
                 });
                 
                 const data = await response.json();
@@ -597,6 +746,7 @@
                             appendMessage('agent', data.reply);
                             if (response.status === 200) {
                                 messageHistory.push({ role: 'assistant', content: data.reply });
+                                localStorage.setItem('chat_history', JSON.stringify(messageHistory));
                             }
                         } else if (data.error) {
                             appendMessage('agent', `⚠️ <span class="font-bold">Server Error:</span> ${data.error}`);
@@ -619,6 +769,14 @@
         // CART DRAWER & CHECKOUT INTERACTION LOGIC
         // ==========================================
         let cart = [];
+        try {
+            const storedCart = localStorage.getItem('shopping_cart');
+            if (storedCart) {
+                cart = JSON.parse(storedCart);
+            }
+        } catch (e) {
+            console.error('Failed to load cart from localStorage', e);
+        }
 
         function toggleCartDrawer(open) {
             const overlay = document.getElementById('cart-drawer-overlay');
@@ -667,6 +825,7 @@
             }
 
             updateCartBadge();
+            localStorage.setItem('shopping_cart', JSON.stringify(cart));
             
             const badge = document.getElementById('cart-badge');
             anime({
@@ -691,12 +850,14 @@
             }
             updateCartBadge();
             renderCart();
+            localStorage.setItem('shopping_cart', JSON.stringify(cart));
         }
 
         function removeFromCart(productId) {
             cart = cart.filter(item => item.product_id !== productId);
             updateCartBadge();
             renderCart();
+            localStorage.setItem('shopping_cart', JSON.stringify(cart));
         }
 
         function updateCartBadge() {
@@ -926,13 +1087,17 @@
                             cart = [];
                             updateCartBadge();
                             renderCart();
+                            localStorage.setItem('shopping_cart', JSON.stringify(cart));
                             // Hide loading overlay
                             loadingOverlay.classList.remove('opacity-100');
                             loadingOverlay.classList.add('pointer-events-none');
                             // Close drawer
                             toggleCartDrawer(false);
                             // Add a success chat message
-                            appendMessage('agent', '🎉 Machan, your Kapruka checkout page has been opened in a new tab! Please complete the payment there.');
+                            const successMsg = '🎉 Machan, your Kapruka checkout page has been opened in a new tab! Please complete the payment there.';
+                            appendMessage('agent', successMsg);
+                            messageHistory.push({ role: 'assistant', content: successMsg });
+                            localStorage.setItem('chat_history', JSON.stringify(messageHistory));
                         }, 1000);
                     } else {
                         const urlMatch = data.raw.match(/https?:\/\/[^\s"]+/);
@@ -943,13 +1108,17 @@
                                 cart = [];
                                 updateCartBadge();
                                 renderCart();
+                                localStorage.setItem('shopping_cart', JSON.stringify(cart));
                                 // Hide loading overlay
                                 loadingOverlay.classList.remove('opacity-100');
                                 loadingOverlay.classList.add('pointer-events-none');
                                 // Close drawer
                                 toggleCartDrawer(false);
                                 // Add a success chat message
-                                appendMessage('agent', '🎉 Machan, your Kapruka checkout page has been opened in a new tab! Please complete the payment there.');
+                                const successMsg = '🎉 Machan, your Kapruka checkout page has been opened in a new tab! Please complete the payment there.';
+                                appendMessage('agent', successMsg);
+                                messageHistory.push({ role: 'assistant', content: successMsg });
+                                localStorage.setItem('chat_history', JSON.stringify(messageHistory));
                             }, 1000);
                         } else {
                             loadingOverlay.classList.remove('opacity-100');
@@ -1104,6 +1273,21 @@
             <div id="cart-loading-overlay" class="absolute inset-0 bg-brand-darker/90 backdrop-blur-md flex flex-col items-center justify-center z-55 opacity-0 pointer-events-none transition-opacity duration-300">
                 <div class="w-12 h-12 border-4 border-brand-yellow border-t-transparent rounded-full animate-spin"></div>
                 <p class="text-sm font-bold text-slate-200 mt-4 tracking-wide" id="cart-loading-text">Securing order details...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom System Confirmation Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-black/75 backdrop-blur-md z-[9999] opacity-0 pointer-events-none flex items-center justify-center transition-all duration-300">
+        <div class="glass-panel w-full max-w-sm rounded-2xl p-6 border border-white/10 bg-brand-dark/95 shadow-2xl scale-90 transition-transform duration-300 flex flex-col items-center text-center">
+            <div class="w-12 h-12 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 flex items-center justify-center text-xl mb-4 shadow-inner">
+                <i class="fa-solid fa-circle-exclamation"></i>
+            </div>
+            <h4 class="text-base font-bold text-slate-100">Clear Chat History?</h4>
+            <p class="text-xs text-slate-400 mt-2 leading-relaxed font-medium">Are you sure you want to clear your chat history, machan? This action cannot be undone.</p>
+            <div class="flex gap-3 w-full mt-6">
+                <button id="confirm-modal-cancel" class="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-bold py-2.5 rounded-xl text-xs transition-colors active:scale-95">Cancel</button>
+                <button id="confirm-modal-approve" class="flex-1 bg-red-500/90 hover:bg-red-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-[0_0_15px_rgba(239,68,68,0.2)] active:scale-95">Yes, Clear It</button>
             </div>
         </div>
     </div>

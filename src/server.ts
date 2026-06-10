@@ -18,17 +18,81 @@ const openai = new OpenAI({
     maxRetries: 5
 });
 
-async function callNvidiaWithRetry(params: any, retries = 5, delay = 2000): Promise<any> {
+const groq = new OpenAI({
+    apiKey: process.env.GROQ_API_KEY,
+    baseURL: 'https://api.groq.com/openai/v1',
+    maxRetries: 5
+});
+
+const GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen/qwen3-32b'];
+
+function isGroqModel(model: string): boolean {
+    return GROQ_MODELS.includes(model);
+}
+
+async function callLLM(model: string, params: any, retries = 5, delay = 2000): Promise<any> {
+    const isGroq = isGroqModel(model);
+    const client = isGroq ? groq : openai;
+    
+    const payload = {
+        ...params,
+        model: model
+    };
+
     try {
-        return await openai.chat.completions.create(params);
+        return await client.chat.completions.create(payload);
     } catch (error: any) {
         if (error.status === 429 && retries > 0) {
-            console.warn(`⚠️ NVIDIA Rate Limit hit (429). Retrying in ${delay / 1000}s... (${retries} retries left)`);
+            console.warn(`⚠️ ${isGroq ? 'GROQ' : 'NVIDIA'} Rate Limit hit (429) for model ${model}. Retrying in ${delay / 1000}s... (${retries} retries left)`);
             await new Promise(resolve => setTimeout(resolve, delay));
-            return callNvidiaWithRetry(params, retries - 1, delay * 1.5);
+            return callLLM(model, params, retries - 1, delay * 1.5);
         }
         throw error;
     }
+}
+
+async function callLLMWithFallback(
+    selectedModel: string,
+    params: {
+        messages: any[];
+        tools?: any[];
+        tool_choice?: any;
+    }
+): Promise<{ response: any; usedModel: string }> {
+    let modelSequence: string[] = [];
+
+    const standardSequence = [
+        'llama-3.3-70b-versatile',
+        'qwen/qwen3-32b',
+        'llama-3.1-8b-instant',
+        'meta/llama-3.3-70b-instruct'
+    ];
+
+    if (selectedModel === 'auto-pick' || !selectedModel) {
+        modelSequence = [...standardSequence];
+    } else {
+        modelSequence = [selectedModel];
+        for (const model of standardSequence) {
+            if (model !== selectedModel) {
+                modelSequence.push(model);
+            }
+        }
+    }
+
+    let lastError: any = null;
+    for (const model of modelSequence) {
+        try {
+            console.log(`🤖 Attempting LLM call with model: ${model}`);
+            const response = await callLLM(model, params);
+            console.log(`✅ LLM call successful with model: ${model}`);
+            return { response, usedModel: model };
+        } catch (error: any) {
+            lastError = error;
+            console.error(`❌ Model [${model}] failed:`, error.message || error);
+        }
+    }
+
+    throw lastError || new Error("All LLM models in fallback sequence failed.");
 }
 
 function resolveRefs(schema: any, defs?: any): any {
@@ -53,6 +117,41 @@ function resolveRefs(schema: any, defs?: any): any {
         newSchema[key] = resolveRefs(schema[key], currentDefs);
     }
     return newSchema;
+}
+
+function flattenToolSchema(schema: any): any {
+    if (schema && schema.type === 'object' && schema.properties && schema.properties.params) {
+        const paramsSchema = schema.properties.params;
+        return {
+            type: 'object',
+            properties: paramsSchema.properties || {},
+            required: paramsSchema.required || [],
+            $defs: schema.$defs || paramsSchema.$defs
+        };
+    }
+    return schema;
+}
+
+function sanitizeArgs(args: any): any {
+    if (!args || typeof args !== 'object') return args;
+    
+    if (Array.isArray(args)) {
+        return args.map(item => sanitizeArgs(item));
+    }
+    
+    const clean: any = {};
+    for (const key in args) {
+        const val = args[key];
+        if (val === 'null' || val === 'undefined' || val === null || val === undefined) {
+            continue;
+        }
+        if (typeof val === 'object') {
+            clean[key] = sanitizeArgs(val);
+        } else {
+            clean[key] = val;
+        }
+    }
+    return clean;
 }
 
 // Initialize Client
@@ -94,16 +193,11 @@ You are Sri Lanka's most advanced, helpful, and charming AI Shopping Agent, powe
 Your goal is to guide users smoothly from product discovery to complete checkout. 
 
 CRITICAL RULES:
-1. Always present items beautifully. When you present one or more products to the user, you MUST format each product using the structured block template below so the UI can render it as a premium product card:
+1. Always present items beautifully. To make card creation blazing fast, you MUST list each product using the short block template below:
 :::product
 id: [Product ID from the tool's id property]
-title: [Full Product Name]
-price: [LKR Price / amount, e.g. LKR 6,850]
-availability: [In Stock / Low Stock / Out of Stock]
-image: [Image URL from the tool's image_url property]
-link: [Product URL/link from the tool's url property]
 :::
-Ensure that the product ID, image URL, and product link are exactly what the Kapruka tool returned. Do not use standard markdown formatting for products; only use the :::product block template above. You can write friendly conversational text in Tanglish/English before and after these blocks.
+DO NOT write the title, price, availability, image, or link fields inside the block. Just write the 'id' field. The server will automatically expand it to a premium product card. DO NOT use plain text, bullet points (* or -), numbered lists, or standard markdown lists for products. If you do not use the :::product block template, the user's interface will NOT show the cards at all!
 2. Support Tanglish (e.g., "machan meka hoda da?") seamlessly. Maintain a warm, friendly Sri Lankan tone.
 3. Manage a multi-item cart if the user asks.
 4. When users are ready, ask for their address to quote delivery, then generate the checkout link.
@@ -111,10 +205,13 @@ Ensure that the product ID, image URL, and product link are exactly what the Kap
 6. When the user asks to search or see products (e.g. "show me", "pennanna"), you MUST search for the products using 'kapruka_search_products', present the results using the ':::product' block template, and STOP to wait for the user's response. Do NOT call 'kapruka_create_order' or check delivery until the user selects a product and explicitly asks to order it.
 7. You MUST call only one tool at a time. Do not make multiple or parallel tool calls.
 8. The search query parameter 'q' for 'kapruka_search_products' must contain a valid keyword of at least 3 characters. Never call the search tool with an empty string ('') or generic/meaningless query.
+9. Occasion-based Gift Suggestions: When a user asks for gift suggestions for an occasion (e.g. "my wife's birthday tomorrow", "anniversary gifts", "Mother's Day", "Valentine's Day"), you MUST suggest gifts from multiple different categories (such as Cakes, Flowers, Chocolates, Perfumes, Soft Toys, or Watches) to provide a rich selection. If the user explicitly lists multiple items or categories (e.g. "cakes, flowers, cards"), you MUST perform separate, sequential search calls for each category (e.g. call search for "cakes", then call search for "flowers", then call search for "cards") one by one before providing your final response. Do not bundle them into a single search query. Format all search results using the ':::product' block template, grouped under clear category headings.
+10. STRICTLY NO HALLUCINATIONS OR MANUAL PRODUCT CREATION: You MUST only suggest products that were returned by the Kapruka tool calls. If a product search yields no results (or the tool is offline/returns error), you MUST NOT invent, guess, or list any mock products. Do not describe or write titles/prices of products that were not returned by search. Instead, politely inform the customer in your usual warm Tanglish tone that you couldn't find those specific items in stock on Kapruka right now, and ask if you can search for something else (e.g., "Sorry machan, I couldn't find any cakes on Kapruka right now. Should I check for flowers or chocolates instead?").
+11. MULTIPLE SEQUENTIAL SEARCHES: Do not stop at a single search if the user request requires multiple items. Call the search tool multiple times (sequentially) to get products for each item, then present them all.
 `;
 
 app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
-    const { messages } = req.body;
+    const { messages, model } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: 'Invalid messages format' });
@@ -135,7 +232,7 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
             function: {
                 name: tool.name,
                 description: tool.description,
-                parameters: resolveRefs(tool.inputSchema),
+                parameters: flattenToolSchema(resolveRefs(tool.inputSchema)),
             },
         }));
 
@@ -144,12 +241,50 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
             ...messages
         ];
 
-        let response = await callNvidiaWithRetry({
-            model: 'meta/llama-3.3-70b-instruct',
-            messages: chatMessages as any,
-            tools: openAiTools.length > 0 ? openAiTools : undefined,
-            tool_choice: openAiTools.length > 0 ? 'auto' : undefined,
+        const selectedModel = model || 'meta/llama-3.3-70b-instruct';
+
+        const validProducts = new Map<string, any>();
+        // Scan historical tool messages for valid products
+        messages.forEach((msg: any) => {
+            if (msg.role === 'tool' && msg.content) {
+                const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+                try {
+                    const parsed = JSON.parse(contentStr);
+                    if (parsed && Array.isArray(parsed.results)) {
+                        parsed.results.forEach((prod: any) => {
+                            if (prod && prod.id) {
+                                validProducts.set(prod.id.trim(), prod);
+                            }
+                        });
+                    }
+                } catch (e) {
+                    // Regex fallback for markdown/text content
+                    const idRegex = /ID:\s*`([^`]+)`|id:\s*"([^"]+)"/gi;
+                    let match;
+                    while ((match = idRegex.exec(contentStr)) !== null) {
+                        const foundId = (match[1] || match[2] || '').trim();
+                        if (foundId) {
+                            validProducts.set(foundId, { id: foundId, name: foundId });
+                        }
+                    }
+                }
+            }
         });
+
+        let llmResult;
+        try {
+            llmResult = await callLLMWithFallback(selectedModel, {
+                messages: chatMessages,
+                tools: openAiTools.length > 0 ? openAiTools : undefined,
+                tool_choice: openAiTools.length > 0 ? 'auto' : undefined,
+            });
+        } catch (fallbackError: any) {
+            console.error(`❌ Critical: All LLM models and fallbacks failed:`, fallbackError);
+            return res.status(500).json({ error: `Machan, all AI models are currently offline. Please try again in a moment!` });
+        }
+
+        let response = llmResult.response;
+        let activeModel = llmResult.usedModel;
 
         let responseMessage = response.choices[0].message;
 
@@ -166,21 +301,38 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
             for (const toolCall of responseMessage.tool_calls) {
                 const toolName = toolCall.function.name;
                 const toolArgs = JSON.parse(toolCall.function.arguments);
+                const cleanedArgs = sanitizeArgs(toolArgs);
 
-                console.log(`📡 Executing Kapruka tool [${toolName}] with args:`, JSON.stringify(toolArgs));
+                // Auto-wrap arguments in "params" if missing (compatibility layer for strict/lax model generation)
+                let mcpArgs = cleanedArgs;
+                if (cleanedArgs && typeof cleanedArgs === 'object' && !cleanedArgs.params) {
+                    mcpArgs = { params: cleanedArgs };
+                    console.log(`🔧 Auto-wrapped tool arguments in 'params':`, JSON.stringify(mcpArgs));
+                }
 
-                const toolResult = await mcpClient.callTool({
-                    name: toolName,
-                    arguments: toolArgs,
-                });
+                console.log(`📡 Executing Kapruka tool [${toolName}] with args:`, JSON.stringify(mcpArgs));
 
-                console.log(`🔌 Tool [${toolName}] returned:`, JSON.stringify(toolResult));
+                // Introduce a 1-second delay between sequential tool calls to prevent rate limit
+                await new Promise(resolve => setTimeout(resolve, 1000));
 
-                // Extract raw text block content if available, otherwise stringify the content array
-                const contentArray = toolResult.content as any[];
-                const rawContent = contentArray && contentArray[0]?.text !== undefined
-                    ? contentArray[0].text
-                    : JSON.stringify(toolResult.content);
+                let rawContent = '';
+                try {
+                    const toolResult = await mcpClient.callTool({
+                        name: toolName,
+                        arguments: mcpArgs,
+                    });
+
+                    console.log(`🔌 Tool [${toolName}] returned:`, JSON.stringify(toolResult));
+
+                    // Extract raw text block content if available, otherwise stringify the content array
+                    const contentArray = toolResult.content as any[];
+                    rawContent = contentArray && contentArray[0]?.text !== undefined
+                        ? contentArray[0].text
+                        : JSON.stringify(toolResult.content);
+                } catch (toolError: any) {
+                    console.error(`❌ Tool execution failed [${toolName}]:`, toolError);
+                    rawContent = `Error: The Kapruka live inventory is temporarily busy or rate limited. (Detail: ${toolError.message || toolError}). Suggest to customer that we can try again shortly or suggest a different category.`;
+                }
 
                 chatMessages.push({
                     role: 'tool',
@@ -188,17 +340,148 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
                     name: toolName,
                     content: rawContent,
                 } as any);
+
+                if (toolName === 'kapruka_search_products') {
+                    try {
+                        const parsed = JSON.parse(rawContent);
+                        if (parsed && Array.isArray(parsed.results)) {
+                            parsed.results.forEach((prod: any) => {
+                                if (prod && prod.id) {
+                                    validProducts.set(prod.id.trim(), prod);
+                                }
+                            });
+                        }
+                    } catch (e) {
+                        // Regex parsing for Markdown formatting from tool output
+                        const productRegex = /\*\*[\d]+\.\s*([^*]+)\*\*\s*\r?\n\s*ID:\s*`([^`]+)`\s*·\s*(?:LKR|Rs\.?)\s*([\d,]+)\s*·\s*([^\r\n·]+)(?:·\s*([^\r\n]+))?\s*\r?\n\s*\[View product\]\(([^)]+)\)/gi;
+                        let match;
+                        while ((match = productRegex.exec(rawContent)) !== null) {
+                            const name = match[1].trim();
+                            const id = match[2].trim();
+                            const priceAmount = parseFloat(match[3].replace(/,/g, ''));
+                            const stockStatus = match[4].trim();
+                            const url = match[6] ? match[6].trim() : '';
+                            
+                            // Reconstruct standard image URL from the ID
+                            let image_url = 'images.png';
+                            if (id.match(/^[a-zA-Z]+[0-9]+$/)) {
+                                image_url = `https://www.kapruka.com/product-image/width=330,quality=93,f=auto/shops/specialGifts/productImages/${id.toLowerCase()}.jpg`;
+                            } else if (id.toLowerCase().startsWith('cake')) {
+                                image_url = `https://www.kapruka.com/product-image/width=330,quality=93,f=auto/shops/cakes/productImages/zoom/${id.toLowerCase()}.jpg`;
+                            }
+                            
+                            validProducts.set(id, {
+                                id: id,
+                                name: name,
+                                price: { amount: priceAmount, currency: 'LKR' },
+                                in_stock: !stockStatus.toLowerCase().includes('out'),
+                                stock_level: stockStatus.toLowerCase().includes('low') ? 'low' : 'high',
+                                image_url: image_url,
+                                url: url
+                            });
+                        }
+                        
+                        // Fallback parsing just for IDs if the structured regex fails
+                        if (validProducts.size === 0) {
+                            const idRegex = /ID:\s*`([^`]+)`|id:\s*"([^"]+)"/gi;
+                            let idMatch;
+                            while ((idMatch = idRegex.exec(rawContent)) !== null) {
+                                const foundId = (idMatch[1] || idMatch[2] || '').trim();
+                                if (foundId) {
+                                    validProducts.set(foundId, { id: foundId, name: foundId });
+                                }
+                            }
+                        }
+                    }
+
+                    chatMessages.push({
+                        role: 'system',
+                        content: 'REMINDER: You MUST format EVERY product returned in the search results using the :::product template. DO NOT use plain text bullet points or standard markdown lists. Ensure all properties (id, title, price, availability, image, link) are exactly mapped from the JSON result.'
+                    } as any);
+                }
             }
 
-            response = await callNvidiaWithRetry({
-                model: 'meta/llama-3.3-70b-instruct',
-                messages: chatMessages as any,
-                tools: openAiTools,
-            });
+            try {
+                llmResult = await callLLMWithFallback(activeModel, {
+                    messages: chatMessages,
+                    tools: openAiTools,
+                });
+            } catch (fallbackError: any) {
+                console.error(`❌ Critical: All LLM models failed in loop:`, fallbackError);
+                return res.status(500).json({ error: `Machan, all AI models are currently offline. Please try again in a moment!` });
+            }
+            response = llmResult.response;
+            activeModel = llmResult.usedModel;
             responseMessage = response.choices[0].message;
         }
 
-        return res.json({ reply: responseMessage.content });
+        let finalReply = responseMessage.content || '';
+
+        // Expand short :::product blocks and filter out hallucinated ones
+        if (finalReply.includes(':::product')) {
+            const productBlockRegex = /:::product\s*([\s\S]*?)\s*:::/g;
+            let cleanedReply = finalReply;
+            const matches = Array.from(finalReply.matchAll(productBlockRegex));
+            
+            for (const match of matches) {
+                const blockText = match[0];
+                const blockContent = match[1];
+                const idMatch = /id:\s*([^\n\r]+)/i.exec(blockContent);
+                
+                if (idMatch) {
+                    let extractedId = idMatch[1].trim();
+                    extractedId = extractedId.replace(/^["'`]|["'`]$/g, '').trim();
+                    
+                    const productInfo = validProducts.get(extractedId);
+                    if (productInfo) {
+                        const priceVal = productInfo.price 
+                            ? `${productInfo.price.currency || 'LKR'} ${productInfo.price.amount.toLocaleString()}`
+                            : 'N/A';
+                        const avail = productInfo.in_stock 
+                            ? (productInfo.stock_level === 'low' ? 'Low Stock' : 'In Stock')
+                            : 'Out of Stock';
+                        
+                        let cleanImage = productInfo.image_url || 'images.png';
+                        // Strip the static2 Cloudflare-protected resize proxy prefix to load directly
+                        const proxyPrefix = 'https://static2.kapruka.com/product-image/width=330,quality=93,f=auto/';
+                        if (cleanImage.startsWith(proxyPrefix)) {
+                            cleanImage = cleanImage.substring(proxyPrefix.length);
+                        }
+                        // Extract absolute URL if it is nested inside the resize proxy path
+                        const nestedUrlIndex = cleanImage.indexOf('http', 1);
+                        if (nestedUrlIndex > -1) {
+                            cleanImage = cleanImage.substring(nestedUrlIndex);
+                        }
+                        if (cleanImage && !cleanImage.startsWith('http://') && !cleanImage.startsWith('https://') && !cleanImage.startsWith('//')) {
+                            if (cleanImage.startsWith('/')) {
+                                cleanImage = 'https://www.kapruka.com' + cleanImage;
+                            } else {
+                                cleanImage = 'https://www.kapruka.com/' + cleanImage;
+                            }
+                        }
+                        
+                        const expandedBlock = `:::product
+id: ${productInfo.id}
+title: ${productInfo.name}
+price: ${priceVal}
+availability: ${avail}
+image: ${cleanImage}
+link: ${productInfo.url || ''}
+:::`;
+                        cleanedReply = cleanedReply.replace(blockText, expandedBlock);
+                    } else {
+                        console.warn("🛡️ Guard: Blocked/removed hallucinated product ID [" + extractedId + "]");
+                        cleanedReply = cleanedReply.replace(blockText, '');
+                    }
+                } else {
+                    console.warn(`🛡️ Guard: Blocked product block with no ID.`);
+                    cleanedReply = cleanedReply.replace(blockText, '');
+                }
+            }
+            finalReply = cleanedReply;
+        }
+
+        return res.json({ reply: finalReply });
 
     } catch (error: any) {
         console.error('Error handling chat iteration:', error);
