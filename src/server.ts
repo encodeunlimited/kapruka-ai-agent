@@ -24,26 +24,158 @@ const groq = new OpenAI({
     maxRetries: 5
 });
 
-const GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen/qwen3-32b'];
+const openrouter = new OpenAI({
+    apiKey: process.env.OPENROUTER_API_KEY || 'sk-or-v1-dummy',
+    baseURL: 'https://openrouter.ai/api/v1',
+    maxRetries: 5
+});
+
+const gemini = new OpenAI({
+    apiKey: process.env.GEMINI_API_KEY || 'dummy',
+    baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    maxRetries: 5
+});
+
+const GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen/qwen3-32b', 'meta-llama/llama-4-scout-17b-16e-instruct'];
+const OPENROUTER_MODELS = ['z-ai/glm-4.5-air:free', 'z-ai/glm-4.5-air'];
+const GEMINI_MODELS = [
+    'gemini-2.5-flash', 
+    'gemini-1.5-flash', 
+    'gemini-2.5-pro', 
+    'gemini-1.5-pro', 
+    'gemini-2.0-flash',
+    'models/gemini-2.5-flash',
+    'models/gemini-flash-latest',
+    'models/gemini-2.5-pro',
+    'models/gemini-pro-latest',
+    'models/gemini-2.0-flash'
+];
+
+let cachedCloudflareAccountId: string | null = null;
+
+async function getCloudflareAccountId(): Promise<string> {
+    if (cachedCloudflareAccountId) return cachedCloudflareAccountId;
+    if (process.env.CLOUDFLARE_ACCOUNT_ID) {
+        cachedCloudflareAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+        return cachedCloudflareAccountId;
+    }
+    const token = process.env.CLOUDFLARE_API_TOKEN;
+    if (!token) {
+        throw new Error("CLOUDFLARE_API_TOKEN is not configured in .env");
+    }
+    
+    try {
+        console.log("📡 Fetching Cloudflare Account ID dynamically...");
+        const res = await fetch('https://api.cloudflare.com/client/v4/accounts', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        const data: any = await res.json();
+        if (data.success && data.result && data.result.length > 0) {
+            cachedCloudflareAccountId = data.result[0].id;
+            console.log(`✅ Dynamically retrieved Cloudflare Account ID: ${cachedCloudflareAccountId}`);
+            return cachedCloudflareAccountId!;
+        }
+        throw new Error(data.errors?.[0]?.message || "No accounts found");
+    } catch (e: any) {
+        console.error("❌ Failed to fetch Cloudflare Account ID:", e.message || e);
+        throw e;
+    }
+}
 
 function isGroqModel(model: string): boolean {
     return GROQ_MODELS.includes(model);
 }
 
+function isOpenRouterModel(model: string): boolean {
+    return OPENROUTER_MODELS.includes(model);
+}
+
+function isGeminiModel(model: string): boolean {
+    return GEMINI_MODELS.includes(model);
+}
+
+function isCloudflareModel(model: string): boolean {
+    return model.startsWith('@cf/');
+}
+
+function sanitizeMessagesForCloudflare(messages: any[]): any[] {
+    const sanitized: any[] = [];
+    for (const msg of messages) {
+        if (msg.role === 'assistant' && msg.tool_calls) {
+            const toolCallNames = msg.tool_calls.map((tc: any) => tc.function?.name || 'tool').join(', ');
+            sanitized.push({
+                role: 'assistant',
+                content: msg.content || `[Executing tool(s): ${toolCallNames}]`
+            });
+        } else if (msg.role === 'tool') {
+            sanitized.push({
+                role: 'user',
+                content: `[Tool result for ${msg.name || 'tool'}]: ${msg.content}`
+            });
+        } else {
+            sanitized.push({
+                role: msg.role,
+                content: msg.content === null || msg.content === undefined ? "" : msg.content
+            });
+        }
+    }
+    return sanitized;
+}
+
 async function callLLM(model: string, params: any, retries = 5, delay = 2000): Promise<any> {
     const isGroq = isGroqModel(model);
-    const client = isGroq ? groq : openai;
+    const isOpenRouter = isOpenRouterModel(model);
+    const isCloudflare = isCloudflareModel(model);
+    const isGemini = isGeminiModel(model);
     
-    const payload = {
+    let client;
+    const payload: any = {
         ...params,
         model: model
     };
+
+    if (isGroq) {
+        client = groq;
+    } else if (isOpenRouter) {
+        client = openrouter;
+    } else if (isGemini) {
+        client = gemini;
+        if (!model.startsWith('models/')) {
+            if (model === 'gemini-2.5-flash') payload.model = 'models/gemini-2.5-flash';
+            else if (model === 'gemini-1.5-flash') payload.model = 'models/gemini-flash-latest';
+            else if (model === 'gemini-2.5-pro') payload.model = 'models/gemini-2.5-pro';
+            else if (model === 'gemini-1.5-pro') payload.model = 'models/gemini-pro-latest';
+            else if (model === 'gemini-2.0-flash') payload.model = 'models/gemini-2.0-flash';
+        }
+    } else if (isCloudflare) {
+        const accountId = await getCloudflareAccountId();
+        client = new OpenAI({
+            apiKey: process.env.CLOUDFLARE_API_TOKEN,
+            baseURL: `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`,
+            maxRetries: 5
+        });
+
+        // Apply Cloudflare message formatting and compatibility fixes
+        payload.messages = sanitizeMessagesForCloudflare(params.messages);
+        
+        // Strip the tools parameter in subsequent iterations if a tool was executed
+        const lastMsg = payload.messages[payload.messages.length - 1];
+        if (lastMsg && lastMsg.content && lastMsg.content.includes('[Tool result for')) {
+            delete payload.tools;
+            delete payload.tool_choice;
+        }
+    } else {
+        client = openai;
+    }
 
     try {
         return await client.chat.completions.create(payload);
     } catch (error: any) {
         if (error.status === 429 && retries > 0) {
-            console.warn(`⚠️ ${isGroq ? 'GROQ' : 'NVIDIA'} Rate Limit hit (429) for model ${model}. Retrying in ${delay / 1000}s... (${retries} retries left)`);
+            const providerName = isGroq ? 'GROQ' : (isOpenRouter ? 'OpenRouter' : (isGemini ? 'Google' : (isCloudflare ? 'Cloudflare' : 'NVIDIA')));
+            console.warn(`⚠️ ${providerName} Rate Limit hit (429) for model ${model}. Retrying in ${delay / 1000}s... (${retries} retries left)`);
             await new Promise(resolve => setTimeout(resolve, delay));
             return callLLM(model, params, retries - 1, delay * 1.5);
         }
@@ -62,7 +194,10 @@ async function callLLMWithFallback(
     let modelSequence: string[] = [];
 
     const standardSequence = [
+        'gemini-2.5-flash',
+        'gemini-1.5-flash',
         'llama-3.3-70b-versatile',
+        'meta-llama/llama-4-scout-17b-16e-instruct',
         'qwen/qwen3-32b',
         'llama-3.1-8b-instant',
         'meta/llama-3.3-70b-instruct'
@@ -197,7 +332,7 @@ CRITICAL RULES:
 :::product
 id: [Product ID from the tool's id property]
 :::
-DO NOT write the title, price, availability, image, or link fields inside the block. Just write the 'id' field. The server will automatically expand it to a premium product card. DO NOT use plain text, bullet points (* or -), numbered lists, or standard markdown lists for products. If you do not use the :::product block template, the user's interface will NOT show the cards at all!
+DO NOT write the title, price, availability, image, or link fields inside the block. Just write the 'id' field. The server will automatically expand it to a premium product card. DO NOT use plain text, bullet points (* or -), numbered lists, or standard markdown lists for products. If you do not use the :::product block template, the user's interface will NOT show the cards at all! NEVER write the product ID (e.g., 'product id: ...', 'ID: ...', or the ID string itself) in the plain text part of your response. Product IDs are internal metadata and MUST NOT be shown directly to the user in text. Only use them inside the :::product blocks.
 2. Support Tanglish (e.g., "machan meka hoda da?") seamlessly. Maintain a warm, friendly Sri Lankan tone.
 3. Manage a multi-item cart if the user asks.
 4. When users are ready, ask for their address to quote delivery, then generate the checkout link.
@@ -244,27 +379,67 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
         const selectedModel = model || 'meta/llama-3.3-70b-instruct';
 
         const validProducts = new Map<string, any>();
-        // Scan historical tool messages for valid products
+        // Scan historical messages for valid products
         messages.forEach((msg: any) => {
-            if (msg.role === 'tool' && msg.content) {
+            if (msg.content) {
                 const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-                try {
-                    const parsed = JSON.parse(contentStr);
-                    if (parsed && Array.isArray(parsed.results)) {
-                        parsed.results.forEach((prod: any) => {
-                            if (prod && prod.id) {
-                                validProducts.set(prod.id.trim(), prod);
+                if (msg.role === 'tool') {
+                    try {
+                        const parsed = JSON.parse(contentStr);
+                        if (parsed && Array.isArray(parsed.results)) {
+                            parsed.results.forEach((prod: any) => {
+                                if (prod && prod.id) {
+                                    validProducts.set(prod.id.trim(), prod);
+                                }
+                            });
+                        }
+                    } catch (e) {
+                        // Regex fallback for markdown/text content
+                        const idRegex = /ID:\s*`([^`]+)`|id:\s*"([^"]+)"/gi;
+                        let match;
+                        while ((match = idRegex.exec(contentStr)) !== null) {
+                            const foundId = (match[1] || match[2] || '').trim();
+                            if (foundId) {
+                                validProducts.set(foundId, { id: foundId, name: foundId });
                             }
-                        });
+                        }
                     }
-                } catch (e) {
-                    // Regex fallback for markdown/text content
-                    const idRegex = /ID:\s*`([^`]+)`|id:\s*"([^"]+)"/gi;
+                } else if (msg.role === 'assistant') {
+                    // Extract from expanded or short product blocks
+                    const productRegex = /:::product\s*([\s\S]*?)\s*:::/gi;
                     let match;
-                    while ((match = idRegex.exec(contentStr)) !== null) {
-                        const foundId = (match[1] || match[2] || '').trim();
-                        if (foundId) {
-                            validProducts.set(foundId, { id: foundId, name: foundId });
+                    while ((match = productRegex.exec(contentStr)) !== null) {
+                        const blockContent = match[1];
+                        const idMatch = /id:\s*([^\n\r]+)/i.exec(blockContent);
+                        const titleMatch = /title:\s*([^\n\r]+)/i.exec(blockContent);
+                        const priceMatch = /price:\s*([^\n\r]+)/i.exec(blockContent);
+                        const availabilityMatch = /availability:\s*([^\n\r]+)/i.exec(blockContent);
+                        const imageMatch = /image:\s*([^\n\r]+)/i.exec(blockContent);
+                        const linkMatch = /link:\s*([^\n\r]+)/i.exec(blockContent);
+                        
+                        if (idMatch) {
+                            const id = idMatch[1].replace(/^["'`]|["'`]$/g, '').trim();
+                            const title = titleMatch ? titleMatch[1].replace(/^["'`]|["'`]$/g, '').trim() : id;
+                            const priceStr = priceMatch ? priceMatch[1].replace(/^["'`]|["'`]$/g, '').trim() : '';
+                            const avail = availabilityMatch ? availabilityMatch[1].replace(/^["'`]|["'`]$/g, '').trim() : '';
+                            const image = imageMatch ? imageMatch[1].replace(/^["'`]|["'`]$/g, '').trim() : '';
+                            const link = linkMatch ? linkMatch[1].replace(/^["'`]|["'`]$/g, '').trim() : '';
+                            
+                            let priceAmount = 0;
+                            if (priceStr) {
+                                const cleaned = priceStr.replace(/[^\d.]/g, '');
+                                priceAmount = parseFloat(cleaned) || 0;
+                            }
+                            
+                            validProducts.set(id, {
+                                id: id,
+                                name: title,
+                                price: { amount: priceAmount, currency: 'LKR' },
+                                in_stock: !avail.toLowerCase().includes('out'),
+                                stock_level: avail.toLowerCase().includes('low') ? 'low' : 'high',
+                                image_url: image,
+                                url: link
+                            });
                         }
                     }
                 }
@@ -308,6 +483,14 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
                 if (cleanedArgs && typeof cleanedArgs === 'object' && !cleanedArgs.params) {
                     mcpArgs = { params: cleanedArgs };
                     console.log(`🔧 Auto-wrapped tool arguments in 'params':`, JSON.stringify(mcpArgs));
+                }
+
+                // Force response_format to JSON for search results to ensure we always get direct image URLs
+                if (toolName === 'kapruka_search_products') {
+                    if (!mcpArgs.params) {
+                        mcpArgs.params = {};
+                    }
+                    mcpArgs.params.response_format = 'json';
                 }
 
                 console.log(`📡 Executing Kapruka tool [${toolName}] with args:`, JSON.stringify(mcpArgs));
@@ -417,17 +600,13 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
 
         let finalReply = responseMessage.content || '';
 
-        // Expand short :::product blocks and filter out hallucinated ones
+        // 1. Extract and expand product blocks, replacing them with placeholders to shield them from raw ID filtering
+        const productBlocks: string[] = [];
         if (finalReply.includes(':::product')) {
             const productBlockRegex = /:::product\s*([\s\S]*?)\s*:::/g;
-            let cleanedReply = finalReply;
-            const matches = Array.from(finalReply.matchAll(productBlockRegex));
-            
-            for (const match of matches) {
-                const blockText = match[0];
-                const blockContent = match[1];
+            let blockIndex = 0;
+            finalReply = finalReply.replace(productBlockRegex, (match: string, blockContent: string) => {
                 const idMatch = /id:\s*([^\n\r]+)/i.exec(blockContent);
-                
                 if (idMatch) {
                     let extractedId = idMatch[1].trim();
                     extractedId = extractedId.replace(/^["'`]|["'`]$/g, '').trim();
@@ -442,12 +621,10 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
                             : 'Out of Stock';
                         
                         let cleanImage = productInfo.image_url || 'images.png';
-                        // Strip the static2 Cloudflare-protected resize proxy prefix to load directly
                         const proxyPrefix = 'https://static2.kapruka.com/product-image/width=330,quality=93,f=auto/';
                         if (cleanImage.startsWith(proxyPrefix)) {
                             cleanImage = cleanImage.substring(proxyPrefix.length);
                         }
-                        // Extract absolute URL if it is nested inside the resize proxy path
                         const nestedUrlIndex = cleanImage.indexOf('http', 1);
                         if (nestedUrlIndex > -1) {
                             cleanImage = cleanImage.substring(nestedUrlIndex);
@@ -468,18 +645,47 @@ availability: ${avail}
 image: ${cleanImage}
 link: ${productInfo.url || ''}
 :::`;
-                        cleanedReply = cleanedReply.replace(blockText, expandedBlock);
-                    } else {
-                        console.warn("🛡️ Guard: Blocked/removed hallucinated product ID [" + extractedId + "]");
-                        cleanedReply = cleanedReply.replace(blockText, '');
+                        productBlocks.push(expandedBlock);
+                        const placeholder = `__PRODUCT_BLOCK_${blockIndex}__`;
+                        blockIndex++;
+                        return placeholder;
                     }
-                } else {
-                    console.warn(`🛡️ Guard: Blocked product block with no ID.`);
-                    cleanedReply = cleanedReply.replace(blockText, '');
                 }
-            }
-            finalReply = cleanedReply;
+                return ''; // Remove invalid/hallucinated blocks
+            });
         }
+
+        // 2. Filter plain text lines to remove raw product IDs and text mentions
+        if (finalReply) {
+            const productIds = Array.from(validProducts.keys());
+            finalReply = finalReply
+                .split('\n')
+                .filter((line: string) => {
+                    const trimmed = line.trim();
+                    // Keep placeholders intact
+                    if (trimmed.startsWith('__PRODUCT_BLOCK_') && trimmed.endsWith('__')) {
+                        return true;
+                    }
+                    if (/product\s*id/i.test(trimmed)) {
+                        return false;
+                    }
+                    for (const id of productIds) {
+                        if (trimmed.includes(id)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                })
+                .join('\n');
+        }
+
+        // 3. Clean up excessive blank lines (more than 2 consecutive newlines) to eliminate empty gaps
+        finalReply = finalReply.replace(/\n{3,}/g, '\n\n');
+
+        // 4. Restore the product blocks in place of placeholders
+        productBlocks.forEach((block, index) => {
+            finalReply = finalReply.replace(`__PRODUCT_BLOCK_${index}__`, block);
+        });
 
         return res.json({ reply: finalReply });
 
