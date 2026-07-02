@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
 import crypto from 'crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -10,8 +11,9 @@ dotenv.config();
 
 const app = express();
 app.use(cors());
-app.use(express.json());
-
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.static(path.join(__dirname, '..')));
 const openai = new OpenAI({
     apiKey: process.env.NVIDIA_API_KEY || process.env.OPENAI_API_KEY,
     baseURL: 'https://integrate.api.nvidia.com/v1',
@@ -333,20 +335,24 @@ CRITICAL RULES:
 id: [Product ID from the tool's id property]
 :::
 DO NOT write the title, price, availability, image, or link fields inside the block. Just write the 'id' field. The server will automatically expand it to a premium product card. DO NOT use plain text, bullet points (* or -), numbered lists, or standard markdown lists for products. If you do not use the :::product block template, the user's interface will NOT show the cards at all! NEVER write the product ID (e.g., 'product id: ...', 'ID: ...', or the ID string itself) in the plain text part of your response. Product IDs are internal metadata and MUST NOT be shown directly to the user in text. Only use them inside the :::product blocks.
-2. Support Tanglish (e.g., "machan meka hoda da?") seamlessly. Maintain a warm, friendly Sri Lankan tone.
-3. Manage a multi-item cart if the user asks.
+2. Support Tanglish (e.g., "machan meka hoda da?") seamlessly. Maintain a warm, friendly Sri Lankan tone. You MUST output friendly, conversational Sri Lankan/Tanglish text *before* rendering the :::product block. Never abruptly output the product card UI without a greeting or transition.
+3. Manage a multi-item cart if the user asks. If the user explicitly confirms they want to add an item to their cart or buy an item, you must autonomously execute a background search for a complementary item (e.g., greeting card, watch box, or chocolates) and gracefully suggest it in your response.
 4. When users are ready, ask for their address to quote delivery, then generate the checkout link.
 5. NEVER call checkout or order creation tools (like 'kapruka_create_order') with placeholder, mock, or hallucinated values. You MUST explicitly ask the user for their address, recipient name, phone number, and delivery date first, and only call 'kapruka_create_order' once they have provided these details.
 6. When the user asks to search or see products (e.g. "show me", "pennanna"), you MUST search for the products using 'kapruka_search_products', present the results using the ':::product' block template, and STOP to wait for the user's response. Do NOT call 'kapruka_create_order' or check delivery until the user selects a product and explicitly asks to order it.
-7. You MUST call only one tool at a time. Do not make multiple or parallel tool calls.
+7. You MUST NOT make multiple parallel tool calls in a single response (to prevent API errors). Instead, if a multi-step workflow is needed, perform a single tool call, wait for the result, and then immediately call the next tool in a sequential loop.
 8. The search query parameter 'q' for 'kapruka_search_products' must contain a valid keyword of at least 3 characters. Never call the search tool with an empty string ('') or generic/meaningless query.
-9. Occasion-based Gift Suggestions: When a user asks for gift suggestions for an occasion (e.g. "my wife's birthday tomorrow", "anniversary gifts", "Mother's Day", "Valentine's Day"), you MUST suggest gifts from multiple different categories (such as Cakes, Flowers, Chocolates, Perfumes, Soft Toys, or Watches) to provide a rich selection. If the user explicitly lists multiple items or categories (e.g. "cakes, flowers, cards"), you MUST perform separate, sequential search calls for each category (e.g. call search for "cakes", then call search for "flowers", then call search for "cards") one by one before providing your final response. Do not bundle them into a single search query. Format all search results using the ':::product' block template, grouped under clear category headings.
-10. STRICTLY NO HALLUCINATIONS OR MANUAL PRODUCT CREATION: You MUST only suggest products that were returned by the Kapruka tool calls. If a product search yields no results (or the tool is offline/returns error), you MUST NOT invent, guess, or list any mock products. Do not describe or write titles/prices of products that were not returned by search. Instead, politely inform the customer in your usual warm Tanglish tone that you couldn't find those specific items in stock on Kapruka right now, and ask if you can search for something else (e.g., "Sorry machan, I couldn't find any cakes on Kapruka right now. Should I check for flowers or chocolates instead?").
-11. MULTIPLE SEQUENTIAL SEARCHES: Do not stop at a single search if the user request requires multiple items. Call the search tool multiple times (sequentially) to get products for each item, then present them all.
+9. THE BUDGET BUNDLE ARCHITECT: If a user specifies a budget and an occasion (e.g., '15,000 LKR for a birthday'), DO NOT just search for one item. You must act as an event planner. Autonomously execute multiple 'kapruka_search_products' calls (sequentially) to build a cohesive bundle (e.g., a cake, flowers, and a gift). Present the final bundle with a calculated total that strictly respects the user's budget. Format all search results using the ':::product' block template.
+10. STRICTLY NO HALLUCINATIONS OR MANUAL PRODUCT CREATION: You MUST only suggest products that were returned by the Kapruka tool calls.
+11. PANIC MODE (Urgency & Emotion Detection): Monitor the user's input for urgency, panic, or last-minute requests (e.g., 'forgot', 'today', 'urgent', 'ASAP'). If detected, immediately shift your tone to be highly reassuring and fast-paced ('Don't panic machan, I've got you covered!'). Autonomously append 'in_stock_only: true' to all searches and prioritize items with fast delivery.
+12. IMAGE SEARCH: Analyze uploaded images, extract visual keywords (e.g., 'blue dial silver watch'), and autonomously use the kapruka_search_products tool to find it.
+13. COMPARISON TABLES: If a user asks to compare two or more products, output a beautifully formatted Markdown table comparing their Price, Stock Status, and Key Features before asking which one they prefer.
+14. PRE-EMPTIVE DELIVERY INTELLIGENCE: Actively remember any location data the user mentions. If the user's city is known, and they show interest in a specific product, you must silently execute the 'kapruka_check_delivery' tool in the background BEFORE they ask about delivery. Append the delivery feasibility seamlessly into your product presentation (e.g., 'Good news, I checked and we can deliver this to Colombo 03 by tomorrow').
+15. CONTEXT INTERRUPTION & ORDER TRACKING: Users will interrupt you. If you are in the middle of building a cart and the user suddenly asks about a past order (e.g., 'Did my cake from yesterday arrive?'), immediately pause the shopping context, execute 'kapruka_track_order', report the status, and then smoothly pivot back to the previous shopping conversation.
 `;
 
 app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
-    const { messages, model } = req.body;
+    const { messages, model, clientProfile } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: 'Invalid messages format' });
@@ -371,8 +377,13 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
             },
         }));
 
+        let activeSystemPrompt = SYSTEM_PROMPT;
+        if (clientProfile && Object.keys(clientProfile).length > 0) {
+            activeSystemPrompt += `\n\nCLIENT PROFILE MEMORY:\nThe user has previously used the following delivery details: ${JSON.stringify(clientProfile)}. If the user profile contains past addresses or details, proactively offer to use them to save time.`;
+        }
+
         let chatMessages = [
-            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'system', content: activeSystemPrompt },
             ...messages
         ];
 

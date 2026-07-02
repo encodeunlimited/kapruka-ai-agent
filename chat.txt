@@ -1,3 +1,3 @@
 my wifes birthday friday machan suggest best gift,cakes,flowers,cards under 20000
 
-npx tsx src/server.ts
+Comparison Tables

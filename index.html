@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     
     <script>
         tailwind.config = {
@@ -40,6 +41,22 @@
             border: 1px solid rgba(139, 92, 246, 0.15);
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
         }
+
+        /* Markdown Styles for Tables & Content */
+        .markdown-body table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; margin-bottom: 1rem; font-size: 0.85rem; background: rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden; display: block; overflow-x: auto; white-space: nowrap; }
+        .markdown-body th, .markdown-body td { border: 1px solid rgba(255,255,255,0.05); padding: 0.75rem 1rem; text-align: left; }
+        .markdown-body th { background: rgba(0,0,0,0.4); font-weight: 700; color: #ffd604; border-bottom: 2px solid rgba(255,214,4,0.3); }
+        .markdown-body tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+        .markdown-body a { color: #ffd604; text-decoration: underline; transition: color 0.2s; }
+        .markdown-body a:hover { color: #fff; }
+        .markdown-body p { margin-bottom: 0.75rem; }
+        .markdown-body p:last-child { margin-bottom: 0; }
+        .markdown-body strong { color: #f8fafc; font-weight: 700; }
+        .markdown-body ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
+        .markdown-body ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1rem; }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 { font-weight: bold; margin-bottom: 0.5rem; color: #fff; }
+        .markdown-body code { background: rgba(0,0,0,0.3); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; font-size: 0.85em; color: #a78bfa; }
+
 
         /* Gemini-inspired fluid deep purple background base */
         .animated-bg {
@@ -98,6 +115,11 @@
                 </div>
             </div>
 
+            <!-- Voice Output Toggle Button -->
+            <button id="voice-toggle-btn" onclick="toggleVoice()" class="bg-white/5 hover:bg-white/10 border border-white/10 text-brand-yellow font-bold px-3 py-2 rounded-xl text-xs transition-all flex items-center gap-1.5 active:scale-95" title="Toggle AI Voice">
+                <i class="fa-solid fa-volume-high"></i>
+            </button>
+
             <!-- Clear Chat Button -->
             <button onclick="clearChatHistory()" class="bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-bold px-3 py-2 rounded-xl text-xs transition-all flex items-center gap-1.5 active:scale-95" title="Clear Chat History">
                 <i class="fa-solid fa-trash-can"></i>
@@ -132,17 +154,30 @@
 
     <footer class="ui-element opacity-0 translate-y-4 absolute bottom-0 left-0 right-0 p-4 md:p-6 bg-gradient-to-t from-black via-brand-darker/95 to-transparent z-20">
         <div class="max-w-5xl mx-auto w-full">
-            <form id="chat-form" class="flex gap-3 bg-brand-darker/80 backdrop-blur-xl rounded-2xl p-2 shadow-[0_0_30px_rgba(0,0,0,0.8)] focus-within:border-brand-yellow/30 border border-white/5 transition-all duration-300">
-                <input 
-                    type="text" 
-                    id="user-input" 
-                    autocomplete="off"
-                    placeholder="Ask for items, check delivery, or pay..." 
-                    class="flex-1 bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-200 placeholder-slate-600 px-4 text-sm md:text-base font-medium"
-                />
-                <button type="submit" class="bg-brand-yellow/90 hover:bg-brand-yellow text-black px-6 py-3 rounded-xl font-bold transition-transform active:scale-95 flex items-center justify-center shadow-[0_0_10px_rgba(255,214,4,0.2)]">
-                    <i class="fa-solid fa-paper-plane"></i>
-                </button>
+            <form id="chat-form" class="flex flex-col gap-2 bg-brand-darker/80 backdrop-blur-xl rounded-2xl p-2 shadow-[0_0_30px_rgba(0,0,0,0.8)] focus-within:border-brand-yellow/30 border border-white/5 transition-all duration-300">
+                <!-- Image Preview -->
+                <div id="image-preview-container" class="hidden px-2 pt-1 relative self-start flex gap-2 flex-wrap">
+                    <!-- Previews injected here -->
+                </div>
+                <div class="flex gap-2 items-center w-full">
+                    <input type="file" id="image-upload" accept="image/*" multiple class="hidden">
+                    <button type="button" id="upload-btn" class="text-slate-400 hover:text-brand-yellow p-2 transition-colors active:scale-95" title="Upload Image">
+                        <i class="fa-solid fa-paperclip text-lg"></i>
+                    </button>
+                    <input 
+                        type="text" 
+                        id="user-input" 
+                        autocomplete="off"
+                        placeholder="Ask for items, check delivery, or pay..." 
+                        class="flex-1 bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-200 placeholder-slate-600 px-2 text-sm md:text-base font-medium"
+                    />
+                    <button type="button" id="mic-btn" class="text-slate-400 hover:text-red-400 p-2 transition-colors active:scale-95" title="Voice Input">
+                        <i class="fa-solid fa-microphone text-lg"></i>
+                    </button>
+                    <button type="submit" class="bg-brand-yellow/90 hover:bg-brand-yellow text-black px-5 py-3 rounded-xl font-bold transition-transform active:scale-95 flex items-center justify-center shadow-[0_0_10px_rgba(255,214,4,0.2)]">
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </button>
+                </div>
             </form>
         </div>
     </footer>
@@ -161,6 +196,22 @@
             console.error('Failed to load chat history from localStorage', e);
         }
         let isWaitingForResponse = false;
+        let attachedImagesBase64 = [];
+        let isVoiceMuted = false;
+
+        function toggleVoice() {
+            isVoiceMuted = !isVoiceMuted;
+            const btnIcon = document.querySelector('#voice-toggle-btn i');
+            const btn = document.getElementById('voice-toggle-btn');
+            if (isVoiceMuted) {
+                btnIcon.className = 'fa-solid fa-volume-xmark';
+                btn.classList.replace('text-brand-yellow', 'text-slate-400');
+                if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+            } else {
+                btnIcon.className = 'fa-solid fa-volume-high';
+                btn.classList.replace('text-slate-400', 'text-brand-yellow');
+            }
+        }
 
         function initGeminiBackground() {
             const canvas = document.getElementById('gemini-canvas');
@@ -353,6 +404,95 @@
                 duration: 1000,
                 easing: 'easeOutElastic(1, .6)'
             }, '-=600');
+
+            // Web Speech API for Mic
+            const micBtn = document.getElementById('mic-btn');
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRecognition) {
+                const recognition = new SpeechRecognition();
+                recognition.continuous = false;
+                recognition.interimResults = false;
+                recognition.lang = 'en-US';
+                
+                recognition.onstart = () => {
+                    micBtn.classList.remove('text-slate-400');
+                    micBtn.classList.add('text-red-500', 'animate-pulse');
+                    userInput.placeholder = 'Listening...';
+                };
+                
+                recognition.onresult = (event) => {
+                    const transcript = event.results[0][0].transcript;
+                    userInput.value = transcript;
+                };
+                
+                recognition.onend = () => {
+                    micBtn.classList.add('text-slate-400');
+                    micBtn.classList.remove('text-red-500', 'animate-pulse');
+                    userInput.placeholder = 'Ask for items, check delivery, or pay...';
+                    if (userInput.value.trim()) {
+                        chatForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                    }
+                };
+                
+                micBtn.addEventListener('click', () => {
+                    recognition.start();
+                });
+            } else {
+                if(micBtn) micBtn.style.display = 'none';
+            }
+
+            const uploadBtn = document.getElementById('upload-btn');
+            const imageUpload = document.getElementById('image-upload');
+            const imagePreviewContainer = document.getElementById('image-preview-container');
+
+            if (uploadBtn && imageUpload) {
+                uploadBtn.addEventListener('click', () => {
+                    imageUpload.click();
+                });
+
+                function renderPreviews() {
+                    imagePreviewContainer.innerHTML = '';
+                    if (attachedImagesBase64.length === 0) {
+                        imagePreviewContainer.classList.add('hidden');
+                        imageUpload.value = '';
+                        return;
+                    }
+                    
+                    attachedImagesBase64.forEach((b64, index) => {
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'relative inline-block';
+                        wrapper.innerHTML = `
+                            <img src="${b64}" class="h-16 w-16 object-cover rounded-lg border border-white/20 shadow-md">
+                            <button type="button" class="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow" onclick="removeImage(${index})">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        `;
+                        imagePreviewContainer.appendChild(wrapper);
+                    });
+                    imagePreviewContainer.classList.remove('hidden');
+                }
+
+                window.removeImage = function(index) {
+                    attachedImagesBase64.splice(index, 1);
+                    renderPreviews();
+                };
+
+                imageUpload.addEventListener('change', async (e) => {
+                    const files = Array.from(e.target.files);
+                    if (files.length > 0) {
+                        for (const file of files) {
+                            const reader = new FileReader();
+                            const promise = new Promise(resolve => {
+                                reader.onload = (event) => resolve(event.target.result);
+                            });
+                            reader.readAsDataURL(file);
+                            const b64 = await promise;
+                            attachedImagesBase64.push(b64);
+                        }
+                        renderPreviews();
+                    }
+                });
+            }
         });
 
         function escapeHtml(str) {
@@ -508,13 +648,13 @@
                 cleanText = cleanLines.join('\n').trim();
             }
             
-            // Format cleanText as standard markdown (images, links, newlines)
-            let formatted = cleanText
-                // Format markdown images: ![alt](url) -> <img>
-                .replace(/!\[([^\]]*)]\(([^)]*)\)/g, '<div class="my-3 rounded-xl overflow-hidden bg-black/30 border border-white/5 p-2 max-w-sm"><img src="$2" alt="$1" class="w-full h-auto object-contain rounded-lg max-h-48" onerror="this.src=\'images.png\'" onload="scrollToBottom()"></div>')
-                // Format markdown links: [text](url) -> <a> button
-                .replace(/\[([^\]]*)]\(([^)]*)\)/g, '<a href="$2" target="_blank" class="inline-flex items-center justify-center gap-2 bg-brand-yellow/90 hover:bg-brand-yellow text-black font-bold px-4 py-2.5 rounded-xl mt-3 transition-colors shadow-inner text-sm"><i class="fa-solid fa-cart-shopping"></i> $1</a>')
-                .replace(/\n/g, '<br>');
+            // Format cleanText as standard markdown using marked.js
+            let formatted = cleanText;
+            if (window.marked && cleanText) {
+                formatted = '<div class="markdown-body custom-scrollbar">' + marked.parse(cleanText) + '</div>';
+            } else {
+                formatted = cleanText.replace(/\n/g, '<br>');
+            }
 
             // If we extracted products, let's append them as a horizontal shelf!
             if (productBlocks.length > 0) {
@@ -605,7 +745,7 @@
                     const escapedAvailability = escapeHtml(product.availability || 'In Stock');
 
                     shelfHtml += `
-                        <div class="product-card flex-shrink-0 w-56 overflow-hidden rounded-2xl border border-white/5 bg-brand-darker/60 backdrop-blur-md transition-all duration-300 hover:border-brand-yellow/30 hover:shadow-[0_0_20px_rgba(255,214,4,0.05)] flex flex-col p-3">
+                        <div class="product-card flex-shrink-0 w-56 overflow-hidden rounded-2xl border border-white/5 bg-brand-darker/60 backdrop-blur-md transition-all duration-300 hover:border-brand-yellow/30 hover:shadow-[0_0_20px_rgba(255,214,4,0.05)] flex flex-col p-3 ${isLow ? 'animate-pulse border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : ''}">
                             <!-- Image Container -->
                             <div class="product-image-container w-full aspect-square rounded-xl overflow-hidden bg-black/40 flex items-center justify-center p-2 mb-3">
                                 <img src="${imgSrc || 'images.png'}" alt="${escapedTitle}" class="w-full h-full object-contain" onerror="this.src='images.png'" onload="scrollToBottom()">
@@ -689,6 +829,19 @@
                 });
             }
 
+            if (role === 'agent' && !isVoiceMuted && 'speechSynthesis' in window) {
+                let speechText = text.replace(/:::product[\s\S]*?:::/g, '');
+                speechText = speechText.replace(/https?:\/\/[^\s]+/g, '');
+                speechText = speechText.replace(/[*_~`>[\]#]/g, '');
+                speechText = speechText.replace(/[\u{1F600}-\u{1F64F}]/gu, ''); 
+                speechText = speechText.replace(/[\u{1F300}-\u{1F5FF}]/gu, ''); 
+                speechText = speechText.replace(/[\u{1F680}-\u{1F6FF}]/gu, '');
+                speechText = speechText.replace(/[\u{2600}-\u{26FF}]/gu, ''); 
+                speechText = speechText.replace(/[\u{2700}-\u{27BF}]/gu, '');
+                const utterance = new SpeechSynthesisUtterance(speechText.trim());
+                window.speechSynthesis.speak(utterance);
+            }
+
             scrollToBottom();
         }
 
@@ -728,15 +881,42 @@
             if (isWaitingForResponse) return;
 
             const message = userInput.value.trim();
-            if (!message) return;
+            if (!message && !attachedImageBase64) return;
 
             isWaitingForResponse = true;
             userInput.disabled = true;
             
-            appendMessage('user', message);
+            if (attachedImagesBase64.length > 0) {
+                const imgsHtml = attachedImagesBase64.map(img => `<img src="${img}" class="h-24 w-24 object-cover rounded border border-brand-yellow/30 shadow-md">`).join('');
+                appendMessage('user', `<div class="flex gap-2 flex-wrap mb-2">${imgsHtml}</div>` + (message || '<i>Attached Images</i>'));
+            } else {
+                appendMessage('user', message);
+            }
             userInput.value = '';
-            messageHistory.push({ role: 'user', content: message });
+
+            let newMsgContent;
+            if (attachedImagesBase64.length > 0) {
+                newMsgContent = [
+                    { type: 'text', text: message || "Analyze these images." },
+                    ...attachedImagesBase64.map(img => ({ type: 'image_url', image_url: { url: img } }))
+                ];
+            } else {
+                newMsgContent = message;
+            }
+
+            messageHistory.push({ role: 'user', content: newMsgContent });
             localStorage.setItem('chat_history', JSON.stringify(messageHistory));
+
+            attachedImagesBase64 = [];
+            const imgPreviewContainer = document.getElementById('image-preview-container');
+            if (imgPreviewContainer) {
+                imgPreviewContainer.classList.add('hidden');
+                imgPreviewContainer.innerHTML = '';
+            }
+            const imgUpload = document.getElementById('image-upload');
+            if (imgUpload) {
+                imgUpload.value = '';
+            }
 
             const typingBubble = createTypingIndicator();
 
@@ -744,12 +924,19 @@
                 const llmSelect = document.getElementById('llm-select');
                 const selectedModel = llmSelect ? llmSelect.value : 'meta/llama-3.3-70b-instruct';
 
+                let clientProfile = {};
+                try {
+                    const savedProfile = localStorage.getItem('clientProfile');
+                    if (savedProfile) clientProfile = JSON.parse(savedProfile);
+                } catch(e) {}
+
                 const response = await fetch('http://localhost:5000/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         messages: messageHistory,
-                        model: selectedModel
+                        model: selectedModel,
+                        clientProfile: clientProfile
                     })
                 });
                 
@@ -1097,56 +1284,70 @@
                 const data = await response.json();
 
                 if (response.status === 200 && data.success) {
-                    loadingText.innerText = "Order created! Redirecting to checkout...";
+                    loadingText.innerText = "Order created! Generating QR Code...";
                     
                     const redirectUrl = data.redirect_url || (data.data && (data.data.checkoutUrl || data.data.redirect_url || data.data.url));
-                    
-                    if (redirectUrl) {
+                    const finalUrl = redirectUrl || (data.raw && data.raw.match(/https?:\/\/[^\s"]+/) ? data.raw.match(/https?:\/\/[^\s"]+/)[0] : null);
+
+                    if (finalUrl) {
                         setTimeout(() => {
-                            window.open(redirectUrl, '_blank');
+                            // Save client profile memory
+                            const clientProfile = {
+                                city: city,
+                                phone: phone,
+                                address: deliveryAddress,
+                                name: recipientName
+                            };
+                            localStorage.setItem('clientProfile', JSON.stringify(clientProfile));
+
                             // Clear cart and update UI
                             cart = [];
                             updateCartBadge();
                             renderCart();
                             localStorage.setItem('shopping_cart', JSON.stringify(cart));
+                            
                             // Hide loading overlay
                             loadingOverlay.classList.remove('opacity-100');
                             loadingOverlay.classList.add('pointer-events-none');
-                            // Close drawer
-                            toggleCartDrawer(false);
+                            
+                            // Show QR Code
+                            document.getElementById('checkout-form').classList.add('hidden');
+                            
+                            // Remove old success if exists
+                            const oldSuccess = document.getElementById('checkout-success');
+                            if (oldSuccess) oldSuccess.remove();
+
+                            const successDiv = document.createElement('div');
+                            successDiv.id = 'checkout-success';
+                            successDiv.className = 'flex flex-col items-center justify-center py-6 space-y-4 text-center';
+                            successDiv.innerHTML = `
+                                <div class="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center text-2xl shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                                    <i class="fa-solid fa-check"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-base font-bold text-slate-100">Order Ready!</h3>
+                                    <p class="text-[11px] text-slate-400 mt-1 max-w-[250px] mx-auto">Scan this QR code with your phone to complete payment via Kapruka Pay.</p>
+                                </div>
+                                <div class="bg-white p-2 rounded-xl shadow-xl border-4 border-white/10 mt-2 mb-2 inline-block">
+                                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(finalUrl)}" alt="Checkout QR Code" class="w-32 h-32 block mx-auto">
+                                </div>
+                                <a href="${finalUrl}" target="_blank" class="w-full max-w-[200px] bg-brand-yellow/90 hover:bg-brand-yellow text-black font-extrabold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(255,214,4,0.2)]">
+                                    <i class="fa-solid fa-external-link-alt"></i> Open on Desktop
+                                </a>
+                            `;
+                            document.getElementById('checkout-form-container').appendChild(successDiv);
+
                             // Add a success chat message
-                            const successMsg = '🎉 Machan, your Kapruka checkout page has been opened in a new tab! Please complete the payment there.';
+                            const successMsg = '🎉 Machan, your order is ready! I have generated a secure QR code in the cart drawer. Scan it to complete your payment on Kapruka.';
                             appendMessage('agent', successMsg);
                             messageHistory.push({ role: 'assistant', content: successMsg });
                             localStorage.setItem('chat_history', JSON.stringify(messageHistory));
                         }, 1000);
                     } else {
-                        const urlMatch = data.raw.match(/https?:\/\/[^\s"]+/);
-                        if (urlMatch) {
-                            setTimeout(() => {
-                                window.open(urlMatch[0], '_blank');
-                                // Clear cart and update UI
-                                cart = [];
-                                updateCartBadge();
-                                renderCart();
-                                localStorage.setItem('shopping_cart', JSON.stringify(cart));
-                                // Hide loading overlay
-                                loadingOverlay.classList.remove('opacity-100');
-                                loadingOverlay.classList.add('pointer-events-none');
-                                // Close drawer
-                                toggleCartDrawer(false);
-                                // Add a success chat message
-                                const successMsg = '🎉 Machan, your Kapruka checkout page has been opened in a new tab! Please complete the payment there.';
-                                appendMessage('agent', successMsg);
-                                messageHistory.push({ role: 'assistant', content: successMsg });
-                                localStorage.setItem('chat_history', JSON.stringify(messageHistory));
-                            }, 1000);
-                        } else {
-                            loadingOverlay.classList.remove('opacity-100');
-                            loadingOverlay.classList.add('pointer-events-none');
-                            errorEl.innerText = "Order created but couldn't parse the checkout redirect link. Check response:\n" + data.raw;
-                            errorEl.classList.remove('hidden');
-                        }
+                        loadingOverlay.classList.remove('opacity-100');
+                        loadingOverlay.classList.add('pointer-events-none');
+                        errorEl.innerText = "Order created but couldn't parse the checkout redirect link. Check response:\n" + data.raw;
+                        errorEl.classList.remove('hidden');
                     }
                 } else {
                     loadingOverlay.classList.remove('opacity-100');
