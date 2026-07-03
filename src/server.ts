@@ -740,6 +740,59 @@ app.get('/api/cities', async (req: Request, res: Response): Promise<any> => {
     }
 });
 
+app.post('/api/tts', async (req: Request, res: Response): Promise<any> => {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: 'Text is required' });
+
+    try {
+        const geminiApiKey = process.env.GEMINI_API_KEY;
+        if (!geminiApiKey) {
+            return res.status(500).json({ error: 'GEMINI_API_KEY is missing' });
+        }
+
+        console.log('🗣️ Calling Gemini TTS API...');
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/interactions?key=${geminiApiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: "gemini-3.1-flash-tts-preview",
+                input: text,
+                response_format: {
+                   type: "audio"
+                },
+                generation_config: {
+                  speech_config: [
+                    { voice: "Kore" }
+                  ]
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const errBody = await response.text();
+            console.error('Gemini TTS Error:', errBody);
+            return res.status(response.status).json({ error: 'Failed to generate speech' });
+        }
+
+        const data: any = await response.json();
+        
+        // Return the base64 audio data from the interaction
+        const audioData = data?.steps?.[0]?.content?.[0]?.data;
+        if (audioData) {
+            return res.json({ audioBase64: audioData });
+        } else {
+            console.error('Invalid response structure:', JSON.stringify(data).substring(0, 500));
+            return res.status(500).json({ error: 'Invalid response from Gemini TTS' });
+        }
+
+    } catch (error: any) {
+        console.error('Error in /api/tts:', error);
+        return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+});
+
 app.post('/api/checkout', async (req: Request, res: Response): Promise<any> => {
     if (!isMcpConnected) {
         return res.status(503).json({ error: 'Kapruka MCP Server not connected' });

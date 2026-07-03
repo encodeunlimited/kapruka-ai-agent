@@ -207,6 +207,10 @@
                 btnIcon.className = 'fa-solid fa-volume-xmark';
                 btn.classList.replace('text-brand-yellow', 'text-slate-400');
                 if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+                if (window.currentAudioTTS) {
+                    window.currentAudioTTS.pause();
+                    window.currentAudioTTS = null;
+                }
             } else {
                 btnIcon.className = 'fa-solid fa-volume-high';
                 btn.classList.replace('text-slate-400', 'text-brand-yellow');
@@ -414,10 +418,13 @@
                 recognition.interimResults = false;
                 recognition.lang = 'en-US';
                 
+                let isRecording = false;
+
                 recognition.onstart = () => {
+                    isRecording = true;
                     micBtn.classList.remove('text-slate-400');
                     micBtn.classList.add('text-red-500', 'animate-pulse');
-                    userInput.placeholder = 'Listening...';
+                    userInput.placeholder = 'Listening... (Speak now)';
                 };
                 
                 recognition.onresult = (event) => {
@@ -425,7 +432,19 @@
                     userInput.value = transcript;
                 };
                 
+                recognition.onerror = (event) => {
+                    console.error('Speech recognition error:', event.error);
+                    if (event.error === 'not-allowed') {
+                        alert('Microphone access was denied. Please allow microphone permissions in your browser settings.');
+                    }
+                    isRecording = false;
+                    micBtn.classList.add('text-slate-400');
+                    micBtn.classList.remove('text-red-500', 'animate-pulse');
+                    userInput.placeholder = 'Ask for items, check delivery, or pay...';
+                };
+
                 recognition.onend = () => {
+                    isRecording = false;
                     micBtn.classList.add('text-slate-400');
                     micBtn.classList.remove('text-red-500', 'animate-pulse');
                     userInput.placeholder = 'Ask for items, check delivery, or pay...';
@@ -435,10 +454,22 @@
                 };
                 
                 micBtn.addEventListener('click', () => {
-                    recognition.start();
+                    if (isRecording) {
+                        recognition.stop();
+                    } else {
+                        try {
+                            recognition.start();
+                        } catch (e) {
+                            console.error('Recognition start error:', e);
+                        }
+                    }
                 });
             } else {
-                if(micBtn) micBtn.style.display = 'none';
+                if(micBtn) {
+                    micBtn.addEventListener('click', () => {
+                        alert('Voice input is not supported in your browser. Please try using Chrome or Edge.');
+                    });
+                }
             }
 
             const uploadBtn = document.getElementById('upload-btn');
@@ -829,17 +860,61 @@
                 });
             }
 
-            if (role === 'agent' && !isVoiceMuted && 'speechSynthesis' in window) {
+            if (role === 'agent' && !isVoiceMuted && shouldAnimate) {
                 let speechText = text.replace(/:::product[\s\S]*?:::/g, '');
                 speechText = speechText.replace(/https?:\/\/[^\s]+/g, '');
-                speechText = speechText.replace(/[*_~`>[\]#]/g, '');
+                // Clean up Markdown symbols and bullets
+                speechText = speechText.replace(/^[\s\-*+]+/gm, ''); // Remove list bullets at start of lines
+                speechText = speechText.replace(/[*_~`>[\]#|]/g, ''); // Remove formatting characters
                 speechText = speechText.replace(/[\u{1F600}-\u{1F64F}]/gu, ''); 
                 speechText = speechText.replace(/[\u{1F300}-\u{1F5FF}]/gu, ''); 
                 speechText = speechText.replace(/[\u{1F680}-\u{1F6FF}]/gu, '');
                 speechText = speechText.replace(/[\u{2600}-\u{26FF}]/gu, ''); 
                 speechText = speechText.replace(/[\u{2700}-\u{27BF}]/gu, '');
-                const utterance = new SpeechSynthesisUtterance(speechText.trim());
-                window.speechSynthesis.speak(utterance);
+                speechText = speechText.trim();
+                
+                if (speechText) {
+                    // Use Gemini TTS API endpoint
+                    fetch('/api/tts', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ text: speechText })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.audioBase64) {
+                            try {
+                                const binary = atob(data.audioBase64);
+                                const len = binary.length;
+                                const bytes = new Uint8Array(len);
+                                for (let i = 0; i < len; i++) {
+                                    bytes[i] = binary.charCodeAt(i);
+                                }
+                                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                                const buffer = audioCtx.createBuffer(1, bytes.length / 2, 24000); 
+                                const channelData = buffer.getChannelData(0);
+                                const dataView = new DataView(bytes.buffer);
+                                for (let i = 0; i < channelData.length; i++) {
+                                    channelData[i] = dataView.getInt16(i * 2, true) / 32768.0; 
+                                }
+                                const source = audioCtx.createBufferSource();
+                                source.buffer = buffer;
+                                source.connect(audioCtx.destination);
+                                source.start(0);
+                                window.currentAudioTTS = source; 
+                            } catch (e) {
+                                console.error('Audio decode failed:', e);
+                            }
+                        } else if (data.error) {
+                            console.error('Gemini TTS Error:', data.error);
+                        }
+                    })
+                    .catch(err => {
+                        console.error('TTS Fetch Error:', err);
+                    });
+                }
             }
 
             scrollToBottom();
