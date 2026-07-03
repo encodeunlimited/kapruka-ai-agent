@@ -22,45 +22,55 @@ This project was built to revolutionize how users interact with Kapruka's live i
 
 ### 🚀 Cutting-Edge UX & Conversational Upgrades (V3.0)
 * **Full-Duplex Voice Interaction:** 
-  * *Voice Input:* Uses the Web Speech API for real-time dictation with visual pulsing feedback.
-  * *AI Voice Output (TTS):* Reads the AI's conversational text out loud using `window.speechSynthesis`. Automatically filters out markdown, emojis, URLs, and UI code blocks for a natural Sri Lankan English/Tanglish accent. Includes a Mute/Unmute toggle.
+  * *Voice Input:* Uses the Web Speech API for real-time dictation with visual pulsing feedback. Handles errors gracefully and supports real-time conversational flow.
+  * *AI Voice Output (Gemini TTS API):* High-quality text-to-speech powered by the `gemini-3.1-flash-tts-preview` model via the Google Generative Language API. Audio is streamed as raw 16-bit PCM and decoded cleanly via the Web Audio API on the frontend for crisp, low-latency playback. Automatically filters out markdown, emojis, URLs, and UI code blocks.
 * **Multimodal "Snap & Search":** Allows users to upload multiple images at once. The AI analyzes the visual context to find visually similar products or read text from images.
-* **Cross-Device Checkout (QR Code Handoff):** Instead of forcing desktop users into a clunky payment flow, it generates a secure, inline QR code inside the cart drawer. Users can scan it to seamlessly complete payment on their mobile phones.
+* **Cross-Device Checkout (QR Code Handoff) & Auto-Redirect:** Upon successful order creation, the UI automatically opens the Kapruka checkout page in a new tab. Simultaneously, it slides open the cart drawer to reveal a secure, inline QR code. Users can scan it to seamlessly complete payment on their mobile phones.
 * **Persistent Client Memory:** Saves previous delivery details to `localStorage` and silently injects them into the AI's system prompt, allowing the agent to say, *"Should I send this to your usual Colombo 03 address?"*
 * **Conversion-Driven "FOMO" Animations:** Dynamically scans product metadata. If an item is "Low Stock," its UI card aggressively pulses with a red neon glow to encourage immediate checkout.
+
+### ☁️ Deployment & Infrastructure
+* **Dockerized Environment:** Fully dockerized backend using a multi-stage `Dockerfile` and `docker-compose` ready setup.
+* **CI/CD with GitHub Actions:** Automated deployment pipeline (`.github/workflows/deploy.yml`) that securely SSHes into a DigitalOcean Droplet, pulls the latest main branch, and triggers a zero-downtime rebuild of the `agentkapruka` Docker container.
 
 ---
 
 ## 🛠️ Technology Stack
 
-* **Frontend:** Vanilla HTML5, JavaScript (ES6+), Tailwind CSS (Utility Styling), Anime.js (Micro-animations).
+* **Frontend:** Vanilla HTML5, JavaScript (ES6+), Tailwind CSS (Utility Styling), Anime.js (Micro-animations), Web Audio API for PCM decoding.
 * **Backend:** Node.js, Express.js.
 * **AI & Orchestration:** Model Context Protocol (MCP) SDK, OpenAI API Client (Supports Groq, Gemini, OpenRouter, and NVIDIA NIMs).
-* **APIs:** Kapruka Live MCP, QR Server API (`api.qrserver.com`), Web Speech API.
+* **APIs:** Kapruka Live MCP, QR Server API (`api.qrserver.com`), Web Speech API, Gemini TTS API (`gemini-3.1-flash-tts-preview`).
+* **DevOps:** Docker, GitHub Actions, DigitalOcean Droplet.
 
 ---
 
 ## ⚙️ Installation & Setup
 
 1. **Clone the Repository**
-2. **Install Dependencies:**
+2. **Environment Variables:**
+   Create a `.env` file in the root directory and add your LLM API keys:
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key_here
+   GROQ_API_KEY=your_groq_api_key_here
+   ```
+3. **Run Locally (Development):**
    ```bash
    npm install
-   ```
-3. **Environment Variables:**
-   Create a `.env` file in the root directory and add your LLM API keys. (e.g., `GEMINI_API_KEY`, `GROQ_API_KEY`).
-4. **Start the Development Server:**
-   ```bash
-   npm run dev
-   # OR
    npx tsx src/server.ts
    ```
+4. **Run via Docker:**
+   ```bash
+   docker build -t kapruka-agent .
+   docker run -p 5000:5000 --env-file .env kapruka-agent
+   ```
 5. **Launch the App:**
-   Open your browser and navigate to **[http://localhost:5000/index.html](http://localhost:5000/index.html)**.
-   *(Note: You must access it via localhost for microphone and voice features to bypass browser security blocks).*
+   Open your browser and navigate to **[http://localhost:5000](http://localhost:5000)**.
+   *(Note: You must access it via localhost or HTTPS for the microphone features to bypass browser security blocks).*
 
 ---
 
 ## 🧑‍💻 Architecture Notes
-* **`index.html`:** Contains the entire presentation layer. Handles the chat UI loop, animations, voice synthesis, image uploads, cart logic, and QR code rendering.
-* **`src/server.ts`:** The gateway server. It initializes the Kapruka MCP connection, constructs the dynamic `SYSTEM_PROMPT` (injecting local memory), processes tool calls sequentially to prevent API rate limits, and serves the frontend statically.
+* **`index.html`:** Contains the entire presentation layer. Handles the chat UI loop, animations, Web Audio PCM decoding for voice synthesis, image uploads, dynamic cart rendering, auto-redirect logic, and QR code handoff.
+* **`src/server.ts`:** The gateway server. It initializes the Kapruka MCP connection, constructs the dynamic `SYSTEM_PROMPT` (injecting local memory), processes tool calls sequentially to prevent API rate limits, proxies requests to the Gemini TTS API, and serves the frontend statically.
+* **`.github/workflows/deploy.yml`:** The automated deployment script ensuring any pushes to `main` are immediately reflected on the production Droplet.
