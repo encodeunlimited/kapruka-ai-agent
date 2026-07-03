@@ -1416,8 +1416,12 @@
                             document.getElementById('checkout-form-container').classList.remove('hidden');
                             document.getElementById('cart-items-container').classList.add('hidden');
 
-                            // Auto-open cart drawer so they see the success QR code
-                            toggleCartDrawer(true);
+                            // Auto-open cart drawer so they see the success QR code without triggering renderCart()
+                            const overlay = document.getElementById('cart-drawer-overlay');
+                            const drawer = document.getElementById('cart-drawer');
+                            overlay.classList.remove('pointer-events-none', 'opacity-0');
+                            overlay.classList.add('opacity-100');
+                            drawer.classList.remove('translate-x-full');
 
                             // Add a success chat message with a direct link
                             const successMsg = `🎉 Machan, your order is ready! <br><br><a href="${finalUrl}" target="_blank" class="inline-block mt-2 bg-brand-yellow/90 hover:bg-brand-yellow text-black font-bold py-2 px-4 rounded-xl text-sm transition-all"><i class="fa-solid fa-external-link-alt"></i> Proceed to Kapruka Checkout</a><br><br>I have also generated a secure QR code in the cart drawer for mobile scanning.`;
