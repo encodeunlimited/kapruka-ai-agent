@@ -1412,11 +1412,17 @@
                             `;
                             document.getElementById('checkout-form-container').appendChild(successDiv);
 
-                            // Add a success chat message
-                            const successMsg = '🎉 Machan, your order is ready! I have generated a secure QR code in the cart drawer. Scan it to complete your payment on Kapruka.';
+                            // Auto-open cart drawer so they see the success QR code
+                            toggleCartDrawer(true);
+
+                            // Add a success chat message with a direct link
+                            const successMsg = `🎉 Machan, your order is ready! <br><br><a href="${finalUrl}" target="_blank" class="inline-block mt-2 bg-brand-yellow/90 hover:bg-brand-yellow text-black font-bold py-2 px-4 rounded-xl text-sm transition-all"><i class="fa-solid fa-external-link-alt"></i> Proceed to Kapruka Checkout</a><br><br>I have also generated a secure QR code in the cart drawer for mobile scanning.`;
                             appendMessage('agent', successMsg);
                             messageHistory.push({ role: 'assistant', content: successMsg });
                             localStorage.setItem('chat_history', JSON.stringify(messageHistory));
+
+                            // Auto-redirect to Kapruka Checkout in a new tab
+                            window.open(finalUrl, '_blank');
                         }, 1000);
                     } else {
                         loadingOverlay.classList.remove('opacity-100');
