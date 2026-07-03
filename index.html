@@ -1412,6 +1412,10 @@
                             `;
                             document.getElementById('checkout-form-container').appendChild(successDiv);
 
+                            // Unhide the form container since renderCart() hides it when cart is empty
+                            document.getElementById('checkout-form-container').classList.remove('hidden');
+                            document.getElementById('cart-items-container').classList.add('hidden');
+
                             // Auto-open cart drawer so they see the success QR code
                             toggleCartDrawer(true);
 
