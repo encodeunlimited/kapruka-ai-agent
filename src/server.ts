@@ -38,7 +38,7 @@ const gemini = new OpenAI({
     maxRetries: 5
 });
 
-const GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen/qwen3-32b', 'meta-llama/llama-4-scout-17b-16e-instruct'];
+const GROQ_MODELS = [];
 const OPENROUTER_MODELS = ['z-ai/glm-4.5-air:free', 'z-ai/glm-4.5-air'];
 const GEMINI_MODELS = [
     'gemini-2.5-flash', 
@@ -198,10 +198,6 @@ async function callLLMWithFallback(
     const standardSequence = [
         'gemini-2.5-flash',
         'gemini-1.5-flash',
-        'llama-3.3-70b-versatile',
-        'meta-llama/llama-4-scout-17b-16e-instruct',
-        'qwen/qwen3-32b',
-        'llama-3.1-8b-instant',
         'meta/llama-3.3-70b-instruct'
     ];
 
