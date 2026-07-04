@@ -1265,6 +1265,7 @@
             clearTimeout(cityTimeout);
             cityTimeout = setTimeout(async () => {
                 try {
+                    //http://localhost:5000/api/cities?q=kotta
                     const res = await fetch(`/api/cities?q=${encodeURIComponent(query)}`);
                     const data = await res.json();
                     
