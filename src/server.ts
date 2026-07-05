@@ -41,6 +41,7 @@ const gemini = new OpenAI({
 const GROQ_MODELS = [];
 const OPENROUTER_MODELS = ['z-ai/glm-4.5-air:free', 'z-ai/glm-4.5-air'];
 const GEMINI_MODELS = [
+    'gemini-1.5-flash-8b',
     'gemini-2.5-flash', 
     'gemini-1.5-flash', 
     'gemini-2.5-pro', 
@@ -145,7 +146,8 @@ async function callLLM(model: string, params: any, retries = 5, delay = 2000): P
     } else if (isGemini) {
         client = gemini;
         if (!model.startsWith('models/')) {
-            if (model === 'gemini-2.5-flash') payload.model = 'models/gemini-2.5-flash';
+            if (model === 'gemini-1.5-flash-8b') payload.model = 'models/gemini-flash-lite-latest';
+            else if (model === 'gemini-2.5-flash') payload.model = 'models/gemini-2.5-flash';
             else if (model === 'gemini-1.5-flash') payload.model = 'models/gemini-flash-latest';
             else if (model === 'gemini-2.5-pro') payload.model = 'models/gemini-2.5-pro';
             else if (model === 'gemini-1.5-pro') payload.model = 'models/gemini-pro-latest';
@@ -196,7 +198,7 @@ async function callLLMWithFallback(
     let modelSequence: string[] = [];
 
     const standardSequence = [
-        'gemini-1.5-flash-8b',
+        'gemini-1.5-flash',
         'meta/llama-3.3-70b-instruct'
     ];
 
@@ -747,7 +749,7 @@ app.post('/api/transcribe', async (req: Request, res: Response): Promise<any> =>
         }
 
         console.log('🎤 Calling Gemini for Transcription...');
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiApiKey}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -801,21 +803,30 @@ app.post('/api/tts', async (req: Request, res: Response): Promise<any> => {
         }
 
         console.log('🗣️ Calling Gemini TTS API...');
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/interactions?key=${geminiApiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: "gemini-1.5-flash",
-                input: text,
-                response_format: {
-                   type: "audio"
-                },
-                generation_config: {
-                  speech_config: [
-                    { voice: "Kore" }
-                  ]
+                contents: [{
+                    parts: [{ text: text }]
+                }],
+                safetySettings: [
+                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                ],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: {
+                                voiceName: "Puck"
+                            }
+                        }
+                    }
                 }
             })
         });
@@ -828,8 +839,8 @@ app.post('/api/tts', async (req: Request, res: Response): Promise<any> => {
 
         const data: any = await response.json();
         
-        // Return the base64 audio data from the interaction
-        const audioData = data?.steps?.[0]?.content?.[0]?.data;
+        // Return the base64 audio data from the generateContent response
+        const audioData = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
         if (audioData) {
             return res.json({ audioBase64: audioData });
         } else {
