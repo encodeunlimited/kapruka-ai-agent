@@ -196,8 +196,7 @@ async function callLLMWithFallback(
     let modelSequence: string[] = [];
 
     const standardSequence = [
-        'gemini-2.5-flash',
-        'gemini-2.5-pro',
+        'gemini-1.5-flash-8b',
         'meta/llama-3.3-70b-instruct'
     ];
 
@@ -748,7 +747,7 @@ app.post('/api/transcribe', async (req: Request, res: Response): Promise<any> =>
         }
 
         console.log('🎤 Calling Gemini for Transcription...');
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -808,7 +807,7 @@ app.post('/api/tts', async (req: Request, res: Response): Promise<any> => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: "gemini-3.1-flash-tts-preview",
+                model: "gemini-1.5-flash",
                 input: text,
                 response_format: {
                    type: "audio"
