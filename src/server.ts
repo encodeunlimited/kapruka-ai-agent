@@ -746,7 +746,7 @@ app.post('/api/transcribe', async (req: Request, res: Response): Promise<any> =>
         }
 
         console.log('🎤 Calling Gemini for Transcription...');
-        const response = await fetch(\`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=\${geminiApiKey}\`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${geminiApiKey}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
