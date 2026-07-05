@@ -73,7 +73,7 @@
         }
     </style>
 </head>
-<body class="animated-bg text-slate-200 h-screen flex flex-col overflow-hidden relative">
+<body class="animated-bg text-slate-200 h-[100dvh] flex flex-col overflow-hidden relative">
 
     <div id="ambient-background" class="fixed inset-0 z-0 overflow-hidden pointer-events-none">
         <canvas id="gemini-canvas" class="absolute inset-0 w-full h-full"></canvas>
@@ -134,7 +134,7 @@
         </div>
     </header>
 
-    <main id="chat-window" class="flex-1 overflow-y-auto px-3 md:px-12 py-4 md:py-6 space-y-4 md:space-y-6 custom-scrollbar max-w-5xl mx-auto w-full pb-32 z-10 relative">
+    <main id="chat-window" class="flex-1 overflow-y-auto px-3 md:px-12 py-4 md:py-6 space-y-4 md:space-y-6 custom-scrollbar max-w-5xl mx-auto w-full z-10 relative">
         <div class="welcome-box opacity-0 scale-95 glass-panel rounded-2xl p-6 flex flex-col md:flex-row items-start gap-5 border-l-2 border-l-brand-yellow/50 mt-4 bg-brand-darker/40">
             <div class="text-3xl bg-black/50 border border-white/5 rounded-full h-14 w-14 flex items-center justify-center shrink-0 shadow-inner">🛒</div>
             <div>
@@ -149,7 +149,7 @@
         </div>
     </main>
 
-    <footer class="ui-element opacity-0 translate-y-4 absolute bottom-0 left-0 right-0 p-3 md:p-6 bg-gradient-to-t from-black via-brand-darker/95 to-transparent z-20">
+    <footer class="ui-element opacity-0 translate-y-4 p-3 md:p-6 bg-gradient-to-t from-black via-brand-darker/95 to-transparent z-20 w-full shrink-0">
         <div class="max-w-5xl mx-auto w-full">
             <form id="chat-form" class="flex flex-col gap-2 bg-brand-darker/80 backdrop-blur-xl rounded-2xl p-2 shadow-[0_0_30px_rgba(0,0,0,0.8)] focus-within:border-brand-yellow/30 border border-white/5 transition-all duration-300">
                 <!-- Image Preview -->
@@ -963,8 +963,21 @@
             return container;
         }
 
+        let smoothScrollTimeout;
+        let hardScrollTimeout;
         function scrollToBottom() {
-            chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'smooth' });
+            // Debounce smooth scroll (fires shortly after the event)
+            if (smoothScrollTimeout) clearTimeout(smoothScrollTimeout);
+            smoothScrollTimeout = setTimeout(() => {
+                chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'smooth' });
+            }, 100);
+
+            // Debounce hard snap (fires after a long delay to guarantee all animations and loads are absolutely finished)
+            // Anime.js takes 600ms, so we wait 800ms to be safe.
+            if (hardScrollTimeout) clearTimeout(hardScrollTimeout);
+            hardScrollTimeout = setTimeout(() => {
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+            }, 800);
         }
 
         chatForm.addEventListener('submit', async (e) => {

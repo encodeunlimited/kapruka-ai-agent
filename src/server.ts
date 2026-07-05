@@ -806,7 +806,7 @@ app.post('/api/tts', async (req: Request, res: Response): Promise<any> => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: "gemini-1.5-flash-8b",
+                model: "gemini-3.1-flash-tts-preview",
                 input: text,
                 response_format: {
                    type: "audio"
