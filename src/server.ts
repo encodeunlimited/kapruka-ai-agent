@@ -739,6 +739,9 @@ app.post('/api/transcribe', async (req: Request, res: Response): Promise<any> =>
     const { audioBase64, mimeType } = req.body;
     if (!audioBase64) return res.status(400).json({ error: 'Audio is required' });
 
+    // Gemini requires strict mime types without codec parameters
+    const cleanMimeType = mimeType ? mimeType.split(';')[0] : 'audio/webm';
+
     try {
         const geminiApiKey = process.env.GEMINI_API_KEY;
         if (!geminiApiKey) {
@@ -758,7 +761,7 @@ app.post('/api/transcribe', async (req: Request, res: Response): Promise<any> =>
                             { text: "Accurately transcribe the speech in this audio. The language might be English, Sinhala, Tamil, or a mix (Singlish). Do not translate, just transcribe the exact words spoken. Output only the transcription, nothing else." },
                             {
                                 inline_data: {
-                                    mime_type: mimeType || "audio/webm",
+                                    mime_type: cleanMimeType,
                                     data: audioBase64
                                 }
                             }

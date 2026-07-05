@@ -415,19 +415,31 @@
                 let audioChunks = [];
                 let isRecording = false;
 
+                let isInitializing = false;
                 micBtn.addEventListener('click', async () => {
+                    if (isInitializing) return;
+
                     if (isRecording) {
                         // Stop recording
-                        mediaRecorder.stop();
+                        isInitializing = true;
+                        try {
+                            mediaRecorder.stop();
+                        } catch (e) {
+                            console.error('Error stopping recorder', e);
+                            isInitializing = false;
+                        }
                     } else {
                         // Start recording
+                        isInitializing = true;
                         try {
                             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                             mediaRecorder = new MediaRecorder(stream);
                             audioChunks = [];
 
                             mediaRecorder.addEventListener("dataavailable", event => {
-                                audioChunks.push(event.data);
+                                if (event.data.size > 0) {
+                                    audioChunks.push(event.data);
+                                }
                             });
 
                             mediaRecorder.addEventListener("stop", async () => {
@@ -435,9 +447,16 @@
                                 micBtn.classList.remove('text-red-500', 'animate-pulse');
                                 userInput.placeholder = 'Transcribing voice...';
                                 isRecording = false;
+                                isInitializing = false;
                                 
                                 // Stop all tracks
                                 stream.getTracks().forEach(track => track.stop());
+
+                                if (audioChunks.length === 0) {
+                                    userInput.placeholder = 'Ask for items, check delivery, or pay...';
+                                    console.error('No audio recorded');
+                                    return;
+                                }
 
                                 const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
                                 const reader = new FileReader();
@@ -471,6 +490,7 @@
 
                             mediaRecorder.start();
                             isRecording = true;
+                            isInitializing = false;
                             micBtn.classList.remove('text-slate-400');
                             micBtn.classList.add('text-red-500', 'animate-pulse');
                             userInput.placeholder = 'Listening... (Click mic again to stop)';
@@ -478,6 +498,7 @@
                         } catch (err) {
                             console.error('Microphone access error:', err);
                             alert('Microphone access was denied or is not supported.');
+                            isInitializing = false;
                         }
                     }
                 });
