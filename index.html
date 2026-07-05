@@ -168,12 +168,7 @@
                         placeholder="Ask for items, check delivery, or pay..." 
                         class="flex-1 bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-200 placeholder-slate-600 px-2 text-sm md:text-base font-medium"
                     />
-                    <select id="voice-lang-select" class="bg-black/30 border border-white/10 rounded-lg text-slate-400 text-xs focus:outline-none focus:ring-0 focus:border-brand-yellow/50 cursor-pointer px-1 py-1 mx-1 hidden sm:block" title="Voice Language">
-                        <option value="si-LK">සිංහල (Sin)</option>
-                        <option value="en-LK">Singlish</option>
-                        <option value="en-US">English</option>
-                        <option value="ta-LK">தமிழ் (Tam)</option>
-                    </select>
+
                     <button type="button" id="mic-btn" class="text-slate-400 hover:text-red-400 p-2 transition-colors active:scale-95" title="Voice Input">
                         <i class="fa-solid fa-microphone text-lg"></i>
                     </button>
@@ -414,75 +409,84 @@
 
             // Web Speech API for Mic
             const micBtn = document.getElementById('mic-btn');
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (SpeechRecognition) {
-                const recognition = new SpeechRecognition();
-                recognition.continuous = false;
-                recognition.interimResults = false;
-                recognition.lang = 'en-US';
-                
+            
+            if (micBtn && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                let mediaRecorder;
+                let audioChunks = [];
                 let isRecording = false;
 
-                const voiceLangSelect = document.getElementById('voice-lang-select');
-                
-                recognition.onstart = () => {
-                    isRecording = true;
-                    // Dynamically set language before starting (if possible, though usually set before start. Let's set it before calling start instead)
-                    micBtn.classList.remove('text-slate-400');
-                    micBtn.classList.add('text-red-500', 'animate-pulse');
-                    userInput.placeholder = 'Listening... (Speak now)';
-                };
-                
-                recognition.onresult = (event) => {
-                    const transcript = event.results[0][0].transcript;
-                    userInput.value = transcript;
-                };
-                
-                recognition.onerror = (event) => {
-                    console.error('Speech recognition error:', event.error);
-                    if (event.error === 'not-allowed') {
-                        alert('Microphone access was denied. Please allow microphone permissions in your browser settings.');
-                    }
-                    isRecording = false;
-                    micBtn.classList.add('text-slate-400');
-                    micBtn.classList.remove('text-red-500', 'animate-pulse');
-                    userInput.placeholder = 'Ask for items, check delivery, or pay...';
-                };
-
-                recognition.onend = () => {
-                    isRecording = false;
-                    micBtn.classList.add('text-slate-400');
-                    micBtn.classList.remove('text-red-500', 'animate-pulse');
-                    userInput.placeholder = 'Ask for items, check delivery, or pay...';
-                    
-                    // Auto-submit the form if we got text
-                    if (userInput.value.trim()) {
-                        // We must trigger submit programmatically
-                        document.querySelector('#chat-form button[type="submit"]').click();
-                    }
-                };
-                
-                micBtn.addEventListener('click', () => {
+                micBtn.addEventListener('click', async () => {
                     if (isRecording) {
-                        recognition.stop();
+                        // Stop recording
+                        mediaRecorder.stop();
                     } else {
+                        // Start recording
                         try {
-                            if (voiceLangSelect) {
-                                recognition.lang = voiceLangSelect.value;
-                            }
-                            recognition.start();
-                        } catch (e) {
-                            console.error('Recognition start error:', e);
+                            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                            mediaRecorder = new MediaRecorder(stream);
+                            audioChunks = [];
+
+                            mediaRecorder.addEventListener("dataavailable", event => {
+                                audioChunks.push(event.data);
+                            });
+
+                            mediaRecorder.addEventListener("stop", async () => {
+                                micBtn.classList.add('text-slate-400');
+                                micBtn.classList.remove('text-red-500', 'animate-pulse');
+                                userInput.placeholder = 'Transcribing voice...';
+                                isRecording = false;
+                                
+                                // Stop all tracks
+                                stream.getTracks().forEach(track => track.stop());
+
+                                const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+                                const reader = new FileReader();
+                                reader.readAsDataURL(audioBlob);
+                                reader.onloadend = async () => {
+                                    const base64data = reader.result.split(',')[1];
+                                    
+                                    try {
+                                        const response = await fetch('/api/transcribe', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                audioBase64: base64data,
+                                                mimeType: mediaRecorder.mimeType
+                                            })
+                                        });
+                                        const data = await response.json();
+                                        if (data.text) {
+                                            userInput.value = data.text;
+                                            document.querySelector('#chat-form button[type="submit"]').click();
+                                        } else {
+                                            userInput.placeholder = 'Ask for items, check delivery, or pay...';
+                                            console.error('Transcription failed:', data.error);
+                                        }
+                                    } catch (err) {
+                                        console.error('Transcription request failed:', err);
+                                        userInput.placeholder = 'Ask for items, check delivery, or pay...';
+                                    }
+                                };
+                            });
+
+                            mediaRecorder.start();
+                            isRecording = true;
+                            micBtn.classList.remove('text-slate-400');
+                            micBtn.classList.add('text-red-500', 'animate-pulse');
+                            userInput.placeholder = 'Listening... (Click mic again to stop)';
+
+                        } catch (err) {
+                            console.error('Microphone access error:', err);
+                            alert('Microphone access was denied or is not supported.');
                         }
                     }
                 });
-            } else {
-                if(micBtn) {
-                    micBtn.addEventListener('click', () => {
-                        alert('Voice input is not supported in your browser. Please try using Chrome or Edge.');
-                    });
-                }
+            } else if (micBtn) {
+                micBtn.addEventListener('click', () => {
+                    alert('Audio recording is not supported in this browser.');
+                });
             }
+
 
             const uploadBtn = document.getElementById('upload-btn');
             const imageUpload = document.getElementById('image-upload');

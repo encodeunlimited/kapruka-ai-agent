@@ -735,6 +735,60 @@ app.get('/api/cities', async (req: Request, res: Response): Promise<any> => {
     }
 });
 
+app.post('/api/transcribe', async (req: Request, res: Response): Promise<any> => {
+    const { audioBase64, mimeType } = req.body;
+    if (!audioBase64) return res.status(400).json({ error: 'Audio is required' });
+
+    try {
+        const geminiApiKey = process.env.GEMINI_API_KEY;
+        if (!geminiApiKey) {
+            return res.status(500).json({ error: 'GEMINI_API_KEY is missing' });
+        }
+
+        console.log('🎤 Calling Gemini for Transcription...');
+        const response = await fetch(\`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=\${geminiApiKey}\`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents: [
+                    {
+                        parts: [
+                            { text: "Accurately transcribe the speech in this audio. The language might be English, Sinhala, Tamil, or a mix (Singlish). Do not translate, just transcribe the exact words spoken. Output only the transcription, nothing else." },
+                            {
+                                inline_data: {
+                                    mime_type: mimeType || "audio/webm",
+                                    data: audioBase64
+                                }
+                            }
+                        ]
+                    }
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            const errBody = await response.text();
+            console.error('Gemini Transcription Error:', errBody);
+            return res.status(response.status).json({ error: 'Failed to transcribe audio' });
+        }
+
+        const data: any = await response.json();
+        const transcription = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (transcription) {
+            return res.json({ text: transcription.trim() });
+        } else {
+            return res.status(500).json({ error: 'Invalid response from Gemini Transcription' });
+        }
+
+    } catch (error: any) {
+        console.error('Error in /api/transcribe:', error);
+        return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+});
+
 app.post('/api/tts', async (req: Request, res: Response): Promise<any> => {
     const { text } = req.body;
     if (!text) return res.status(400).json({ error: 'Text is required' });
