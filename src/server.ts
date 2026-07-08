@@ -392,16 +392,19 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
                 if (msg.role === 'tool') {
                     try {
                         const parsed = JSON.parse(contentStr);
-                        if (parsed && Array.isArray(parsed.results)) {
-                            parsed.results.forEach((prod: any) => {
+                        const resultsArray = Array.isArray(parsed) ? parsed : (parsed?.results || parsed?.data || parsed?.items || parsed?.products || []);
+                        if (Array.isArray(resultsArray) && resultsArray.length > 0) {
+                            resultsArray.forEach((prod: any) => {
                                 if (prod && prod.id) {
                                     validProducts.set(prod.id.trim(), prod);
                                 }
                             });
+                        } else if (parsed && parsed.id) {
+                            validProducts.set(parsed.id.trim(), parsed);
                         }
                     } catch (e) {
                         // Regex fallback for markdown/text content
-                        const idRegex = /ID:\s*`([^`]+)`|id:\s*"([^"]+)"/gi;
+                        const idRegex = /ID:\s*`?([a-zA-Z0-9_-]+)`?|id:\s*"?([a-zA-Z0-9_-]+)"?/gi;
                         let match;
                         while ((match = idRegex.exec(contentStr)) !== null) {
                             const foundId = (match[1] || match[2] || '').trim();
@@ -533,12 +536,15 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
                 if (toolName === 'kapruka_search_products') {
                     try {
                         const parsed = JSON.parse(rawContent);
-                        if (parsed && Array.isArray(parsed.results)) {
-                            parsed.results.forEach((prod: any) => {
+                        const resultsArray = Array.isArray(parsed) ? parsed : (parsed?.results || parsed?.data || parsed?.items || parsed?.products || []);
+                        if (Array.isArray(resultsArray) && resultsArray.length > 0) {
+                            resultsArray.forEach((prod: any) => {
                                 if (prod && prod.id) {
                                     validProducts.set(prod.id.trim(), prod);
                                 }
                             });
+                        } else if (parsed && parsed.id) {
+                            validProducts.set(parsed.id.trim(), parsed);
                         }
                     } catch (e) {
                         // Regex parsing for Markdown formatting from tool output
@@ -572,7 +578,7 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
                         
                         // Fallback parsing just for IDs if the structured regex fails
                         if (validProducts.size === 0) {
-                            const idRegex = /ID:\s*`([^`]+)`|id:\s*"([^"]+)"/gi;
+                            const idRegex = /ID:\s*`?([a-zA-Z0-9_-]+)`?|id:\s*"?([a-zA-Z0-9_-]+)"?/gi;
                             let idMatch;
                             while ((idMatch = idRegex.exec(rawContent)) !== null) {
                                 const foundId = (idMatch[1] || idMatch[2] || '').trim();
