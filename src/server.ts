@@ -504,8 +504,7 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<any> => {
 
                 console.log(`📡 Executing Kapruka tool [${toolName}] with args:`, JSON.stringify(mcpArgs));
 
-                // Introduce a 1-second delay between sequential tool calls to prevent rate limit
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // Removed 1-second delay to speed up product find
 
                 let rawContent = '';
                 try {
@@ -809,7 +808,7 @@ app.post('/api/tts', async (req: Request, res: Response): Promise<any> => {
         }
 
         console.log('🗣️ Calling Gemini TTS API...');
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent?key=${geminiApiKey}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
